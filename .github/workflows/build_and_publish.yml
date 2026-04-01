@@ -20,6 +20,8 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: astral-sh/setup-uv@v5
+
       - name: Build platform wheels
         run: python build_wheels.py --version "${{ inputs.version }}" --output-dir dist/
 
