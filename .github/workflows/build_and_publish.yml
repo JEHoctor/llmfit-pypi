@@ -1,0 +1,66 @@
+name: Build and publish llmfit wheels
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Upstream llmfit release tag (e.g. v0.8.6)'
+        required: true
+
+jobs:
+  # ------------------------------------------------------------------
+  # Build all platform wheels + the meta-package wheel
+  # ------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: pip install uv
+
+      - name: Build platform wheels
+        run: python build_wheels.py --version "${{ inputs.version }}" --output-dir dist/
+
+      - name: Build meta-package wheel
+        # build_wheels.py already patched pyproject.toml's version field
+        run: uv build --wheel --out-dir dist/
+
+      - name: List built artifacts
+        run: ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: dist/
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Publish to PyPI via OIDC trusted publisher (no API tokens needed)
+  # ------------------------------------------------------------------
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # Required for OIDC
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels
+          path: dist/
+
+      - name: List artifacts to publish
+        run: ls -lh dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        # No username/password needed; authentication is via OIDC trusted publisher.
+        # Configure trusted publisher at pypi.org for each package:
+        #   Repository: <your-github-org>/llmfit-pypi
+        #   Workflow:   build_and_publish.yml
+        #   Environment: pypi

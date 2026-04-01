@@ -1,0 +1,33 @@
+[project]
+name = "llmfit"
+version = "0.0.0"
+description = "Unofficial PyPI distribution of llmfit – the LLM model management CLI"
+authors = [
+    { name = "James Hoctor", email = "JEHoctor@protonmail.com" }
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+keywords = ["llm", "cli", "machine-learning", "model-management"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "llmfit-x86-64-unknown-linux-gnu ; platform_system == 'Linux' and platform_machine == 'x86_64'",
+    "llmfit-aarch64-unknown-linux-gnu ; platform_system == 'Linux' and platform_machine == 'aarch64'",
+    "llmfit-x86-64-apple-darwin ; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+    "llmfit-aarch64-apple-darwin ; platform_system == 'Darwin' and platform_machine == 'arm64'",
+    "llmfit-x86-64-pc-windows-msvc ; platform_system == 'Windows' and platform_machine == 'AMD64'",
+    "llmfit-aarch64-pc-windows-msvc ; platform_system == 'Windows' and platform_machine == 'ARM64'",
+]
+
+[project.urls]
+Homepage = "https://github.com/AlexsJones/llmfit"
+"Bug Tracker" = "https://github.com/AlexsJones/llmfit/issues"
+"Packaging Source" = "https://github.com/JEHoctor/llmfit-pypi"
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
