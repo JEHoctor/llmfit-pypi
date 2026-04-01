@@ -1,7 +1,9 @@
 {
     "cSpell.words": [
         "llmfit",
+        "manylinux",
         "msvc",
+        "musllinux",
         "pypa"
     ]
 }

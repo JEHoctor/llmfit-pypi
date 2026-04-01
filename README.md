@@ -32,23 +32,12 @@ uv tool install -U llmfit
 |---|---|---|
 | Linux (glibc) | x86_64 | Requires glibc ≥ 2.17 |
 | Linux (glibc) | aarch64 | Requires glibc ≥ 2.17 |
+| Linux (musl) | x86_64 | Alpine / musl Linux |
+| Linux (musl) | aarch64 | Alpine / musl Linux |
 | macOS | x86_64 (Intel) | Requires macOS ≥ 10.15 |
 | macOS | arm64 (Apple Silicon) | Requires macOS ≥ 11.0 |
 | Windows | x86_64 | |
 | Windows | ARM64 | |
-
-### Alpine / musl Linux
-
-`pip install llmfit` selects the glibc wheel on Linux; Alpine uses musl and
-the glibc binary will not run. Install the musl wheel directly instead:
-
-```bash
-# x86_64
-pip install llmfit-x86-64-unknown-linux-musl
-
-# aarch64
-pip install llmfit-aarch64-unknown-linux-musl
-```
 
 ## Version correspondence
 
@@ -75,8 +64,8 @@ Source for this packaging wrapper: <https://github.com/JEHoctor/llmfit-pypi>
 2. If they differ, it triggers `build_and_publish.yml` with the new tag.
 3. `build_and_publish.yml` calls `build_wheels.py`, which downloads each
    platform archive from GitHub Releases, verifies its SHA256 checksum,
-   extracts the binary, and constructs a platform wheel. It also builds the
-   `llmfit` meta-package wheel.
+   extracts the binary, and constructs a platform-tagged wheel for the `llmfit`
+   package.
 4. All wheels are published to PyPI via OIDC Trusted Publisher (no API tokens
    stored in repository secrets).
 
@@ -87,27 +76,16 @@ version tag (e.g. `v0.8.6`).
 
 These steps cannot be automated and must be done once by the repository owner.
 
-**1. Create PyPI projects**
+**1. Create the PyPI project**
 
-Register the following package names on PyPI (pypi.org) under your account:
+Register `llmfit` on PyPI (pypi.org) under your account. You can create the
+project by uploading a minimal first release (e.g. via `python -m twine upload`)
+or by registering through the PyPI web UI.
 
-- `llmfit`
-- `llmfit-x86-64-unknown-linux-gnu`
-- `llmfit-aarch64-unknown-linux-gnu`
-- `llmfit-x86-64-unknown-linux-musl`
-- `llmfit-aarch64-unknown-linux-musl`
-- `llmfit-x86-64-apple-darwin`
-- `llmfit-aarch64-apple-darwin`
-- `llmfit-x86-64-pc-windows-msvc`
-- `llmfit-aarch64-pc-windows-msvc`
+**2. Configure PyPI Trusted Publisher**
 
-You can create a project by uploading a minimal first release (e.g. via
-`python -m twine upload`) or by registering through the PyPI web UI.
-
-**2. Configure PyPI Trusted Publisher for each package**
-
-For each of the 9 PyPI projects above, go to the project's settings page on
-pypi.org and add a Trusted Publisher with these values:
+Go to the `llmfit` project's settings page on pypi.org and add a Trusted
+Publisher with these values:
 
 | Field | Value |
 |---|---|
