@@ -20,6 +20,12 @@ After installation the `llmfit` command is available on your PATH.
 llmfit --help
 ```
 
+You can also use this package to install and update `llmfit` via uv tool:
+
+```bash
+uv tool install -U llmfit
+```
+
 ## Supported platforms
 
 | Platform | Architecture | Notes |
