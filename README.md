@@ -28,15 +28,18 @@ uv tool install -U llmfit
 
 ## Supported platforms
 
-| Platform | Architecture | Notes |
+See [Rust platform support](https://doc.rust-lang.org/nightly/rustc/platform-support.html) for more information.
+Refer to the the [upstream llmfit project](https://github.com/AlexsJones/llmserve?tab=readme-ov-file#llmserve) for authoritative requirements.
+
+| Platform | Architecture | Requirements |
 |---|---|---|
-| Linux (glibc) | x86_64 | Requires glibc ≥ 2.17 |
-| Linux (glibc) | aarch64 | Requires glibc ≥ 2.17 |
-| Linux (musl) | x86_64 | Alpine / musl Linux |
-| Linux (musl) | aarch64 | Alpine / musl Linux |
-| macOS | x86_64 (Intel) | Requires macOS ≥ 10.15 |
-| macOS | arm64 (Apple Silicon) | Requires macOS ≥ 11.0 |
-| Windows | x86_64 | |
+| Linux (glibc) | x86_64 | kernel ≥ 3.2, glibc ≥ 2.17 |
+| Linux (glibc) | aarch64 | kernel ≥ 4.1, glibc ≥ 2.17 |
+| Linux (musl) | x86_64 | musl ≥ 1.2.5 |
+| Linux (musl) | aarch64 | musl ≥ 1.2.5 |
+| macOS | x86_64 (Intel) | macOS ≥ 10.12 |
+| macOS | arm64 (Apple Silicon) | macOS ≥ 11.0 |
+| Windows | x86_64 | Windows 10+ or Windows Server 2016+ |
 | Windows | ARM64 | |
 
 ## Version correspondence
