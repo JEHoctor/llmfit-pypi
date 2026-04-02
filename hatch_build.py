@@ -44,6 +44,14 @@ GITHUB_DOWNLOAD_URL = (
     "https://github.com/AlexsJones/llmfit/releases/download/{version_tag}/{filename}"
 )
 
+GITHUB_LICENSE_API_URL = (
+    "https://api.github.com/repos/AlexsJones/llmfit/license?ref={ref}"
+)
+
+# The SPDX identifier we claim in our LICENSE file for the upstream binary.
+# If the upstream ever relicenses, this check will catch it and the build will fail.
+CLAIMED_UPSTREAM_SPDX_ID = "MIT"
+
 # target triple → (wheel_platform_tag, binary_name, is_zip)
 TARGET_CONFIGS: dict[str, tuple[str, str, bool]] = {
     "x86_64-unknown-linux-gnu":   ("manylinux_2_17_x86_64",  "llmfit",     False),
@@ -125,6 +133,46 @@ def _fetch_binary(version: str, target: str) -> bytes:
     return binary_data
 
 
+def _verify_upstream_license(version_tag: str) -> None:
+    """Fetch the upstream license via the GitHub API and confirm it matches our claim.
+
+    Fails the build if the license cannot be retrieved or does not match
+    ``CLAIMED_UPSTREAM_SPDX_ID``.
+    """
+    url = GITHUB_LICENSE_API_URL.format(ref=version_tag)
+    print(f"  GET {url}")
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not retrieve upstream license from {url}: {exc}\n"
+            "Refusing to build while license cannot be verified."
+        ) from exc
+
+    spdx_id = (data.get("license") or {}).get("spdx_id", "NOASSERTION")
+    if spdx_id == "NOASSERTION":
+        raise RuntimeError(
+            f"GitHub could not identify the upstream license at tag {version_tag!r}. "
+            f"Cannot verify our claim of {CLAIMED_UPSTREAM_SPDX_ID!r}. "
+            "Refusing to build."
+        )
+    if spdx_id != CLAIMED_UPSTREAM_SPDX_ID:
+        raise RuntimeError(
+            f"Upstream license mismatch at tag {version_tag!r}: "
+            f"we claim {CLAIMED_UPSTREAM_SPDX_ID!r} but GitHub reports {spdx_id!r}. "
+            "Update LICENSE and CLAIMED_UPSTREAM_SPDX_ID before building."
+        )
+    print(f"  License OK (upstream SPDX: {spdx_id})")
+
+
 class CustomBuildHook(BuildHookInterface):
     PLUGIN_NAME = "custom"
 
@@ -143,6 +191,7 @@ class CustomBuildHook(BuildHookInterface):
             return
 
         print(f"[llmfit build hook] target={target}  wheel tag=py3-none-{wheel_tag}")
+        _verify_upstream_license(version_tag)
 
         binary_data = _fetch_binary(version, target)
 
