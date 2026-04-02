@@ -6,42 +6,54 @@ verifies its SHA256 checksum, and injects it into the wheel at
 llmfit/_bin/{binary_name}.  Also overrides the wheel platform tag so that
 cross-platform wheels can be produced from a single Linux CI runner.
 
+For editable installs (``uv sync``, ``uv run``), the binary is written
+directly into ``src/llmfit/_bin/`` so that ``find_llmfit_bin()`` works
+without a full wheel build.  The binary is cached there and re-downloaded
+only when absent.
+
 Environment variables
 ---------------------
 LLMFIT_TARGET
     Target triple to build for (e.g. ``x86_64-unknown-linux-gnu``).
     If unset, the current machine's platform is auto-detected.  Set this
     explicitly when building for a platform other than the host.
+LLMFIT_VERSION
+    Upstream release tag to fetch for editable installs (e.g. ``v0.8.6``).
+    If unset, the version is read from pyproject.toml, falling back to the
+    latest GitHub release.
 """
 from __future__ import annotations
 
 import hashlib
 import io
+import json
+import os
 import platform
+import re
 import sys
 import tarfile
 import tempfile
 import urllib.request
 import zipfile
-import os
 from pathlib import Path
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
+GITHUB_API_LATEST = "https://api.github.com/repos/AlexsJones/llmfit/releases/latest"
 GITHUB_DOWNLOAD_URL = (
     "https://github.com/AlexsJones/llmfit/releases/download/{version_tag}/{filename}"
 )
 
 # target triple → (wheel_platform_tag, binary_name, is_zip)
 TARGET_CONFIGS: dict[str, tuple[str, str, bool]] = {
-    "x86_64-unknown-linux-gnu":  ("manylinux_2_17_x86_64",  "llmfit",     False),
-    "aarch64-unknown-linux-gnu": ("manylinux_2_17_aarch64", "llmfit",     False),
-    "x86_64-unknown-linux-musl": ("musllinux_1_2_x86_64",   "llmfit",     False),
-    "aarch64-unknown-linux-musl":("musllinux_1_2_aarch64",  "llmfit",     False),
-    "x86_64-apple-darwin":       ("macosx_10_15_x86_64",    "llmfit",     False),
-    "aarch64-apple-darwin":      ("macosx_11_0_arm64",      "llmfit",     False),
-    "x86_64-pc-windows-msvc":    ("win_amd64",              "llmfit.exe", True),
-    "aarch64-pc-windows-msvc":   ("win_arm64",              "llmfit.exe", True),
+    "x86_64-unknown-linux-gnu":   ("manylinux_2_17_x86_64",  "llmfit",     False),
+    "aarch64-unknown-linux-gnu":  ("manylinux_2_17_aarch64", "llmfit",     False),
+    "x86_64-unknown-linux-musl":  ("musllinux_1_2_x86_64",   "llmfit",     False),
+    "aarch64-unknown-linux-musl": ("musllinux_1_2_aarch64",  "llmfit",     False),
+    "x86_64-apple-darwin":        ("macosx_10_15_x86_64",    "llmfit",     False),
+    "aarch64-apple-darwin":       ("macosx_11_0_arm64",      "llmfit",     False),
+    "x86_64-pc-windows-msvc":     ("win_amd64",              "llmfit.exe", True),
+    "aarch64-pc-windows-msvc":    ("win_arm64",              "llmfit.exe", True),
 }
 
 
@@ -85,6 +97,34 @@ def _extract(archive_bytes: bytes, binary_name: str, is_zip: bool) -> bytes:
     raise FileNotFoundError(f"{binary_name!r} not found in tar.gz archive")
 
 
+def _fetch_binary(version: str, target: str) -> bytes:
+    """Download, verify, and extract the binary for the given version and target."""
+    _, binary_name, is_zip = TARGET_CONFIGS[target]
+    version_tag = f"v{version.lstrip('v')}"
+    ext = ".zip" if is_zip else ".tar.gz"
+    archive_filename = f"llmfit-{version_tag}-{target}{ext}"
+    sha256_filename = f"{archive_filename}.sha256"
+
+    archive_url = GITHUB_DOWNLOAD_URL.format(version_tag=version_tag, filename=archive_filename)
+    sha256_url = GITHUB_DOWNLOAD_URL.format(version_tag=version_tag, filename=sha256_filename)
+
+    archive_bytes = _download(archive_url)
+    sha256_content = _download(sha256_url).decode()
+    expected_hash = sha256_content.split()[0]
+    actual_hash = hashlib.sha256(archive_bytes).hexdigest()
+    if actual_hash != expected_hash:
+        raise ValueError(
+            f"SHA256 mismatch for {archive_filename}:\n"
+            f"  expected: {expected_hash}\n"
+            f"  actual:   {actual_hash}"
+        )
+    print(f"  SHA256 OK ({actual_hash[:16]}...)")
+
+    binary_data = _extract(archive_bytes, binary_name, is_zip)
+    print(f"  Extracted {binary_name} ({len(binary_data):,} bytes)")
+    return binary_data
+
+
 class CustomBuildHook(BuildHookInterface):
     PLUGIN_NAME = "custom"
 
@@ -96,43 +136,22 @@ class CustomBuildHook(BuildHookInterface):
                 f"Must be one of: {sorted(TARGET_CONFIGS)}"
             )
 
-        wheel_tag, binary_name, is_zip = TARGET_CONFIGS[target]
-        version_tag = f"v{version.lstrip('v')}"
-        ext = ".zip" if is_zip else ".tar.gz"
-        archive_filename = f"llmfit-{version_tag}-{target}{ext}"
-        sha256_filename = f"{archive_filename}.sha256"
+        wheel_tag, binary_name, _ = TARGET_CONFIGS[target]
+
+        if version == "editable":
+            self._install_editable_binary(target, binary_name)
+            return
 
         print(f"[llmfit build hook] target={target}  wheel tag=py3-none-{wheel_tag}")
 
-        archive_url = GITHUB_DOWNLOAD_URL.format(
-            version_tag=version_tag, filename=archive_filename
-        )
-        sha256_url = GITHUB_DOWNLOAD_URL.format(
-            version_tag=version_tag, filename=sha256_filename
-        )
+        binary_data = _fetch_binary(version, target)
 
-        archive_bytes = _download(archive_url)
-        sha256_content = _download(sha256_url).decode()
-        expected_hash = sha256_content.split()[0]
-        actual_hash = hashlib.sha256(archive_bytes).hexdigest()
-        if actual_hash != expected_hash:
-            raise ValueError(
-                f"SHA256 mismatch for {archive_filename}:\n"
-                f"  expected: {expected_hash}\n"
-                f"  actual:   {actual_hash}"
-            )
-        print(f"  SHA256 OK ({actual_hash[:16]}...)")
-
-        binary_data = _extract(archive_bytes, binary_name, is_zip)
-        print(f"  Extracted {binary_name} ({len(binary_data):,} bytes)")
-
-        # Write binary to a temp dir that persists for the duration of the build.
+        # Write binary and version-stamped __init__.py to a temp dir.
         tmp_dir = Path(tempfile.mkdtemp())
         tmp_bin = tmp_dir / binary_name
         tmp_bin.write_bytes(binary_data)
         tmp_bin.chmod(0o755)
 
-        # Inject binary and override __init__.py with the correct __version__.
         init_src = Path(self.root) / "src" / "llmfit" / "__init__.py"
         init_text = init_src.read_text().replace(
             '__version__ = "0.0.0"', f'__version__ = "{version}"', 1
@@ -146,3 +165,38 @@ class CustomBuildHook(BuildHookInterface):
         # Override the platform tag so cross-platform wheels get the right name.
         build_data["tag"] = f"py3-none-{wheel_tag}"
         build_data["pure_python"] = False
+
+    def _install_editable_binary(self, target: str, binary_name: str) -> None:
+        """Write the binary directly into src/llmfit/_bin/ for editable installs.
+
+        The binary is cached — if it already exists it is not re-downloaded.
+        """
+        bin_dir = Path(self.root) / "src" / "llmfit" / "_bin"
+        dest = bin_dir / binary_name
+        if dest.is_file():
+            print(f"[llmfit build hook] editable: binary already present at {dest}")
+            return
+
+        version = self._resolve_editable_version()
+        print(f"[llmfit build hook] editable: target={target}  version={version}")
+
+        binary_data = _fetch_binary(version, target)
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(binary_data)
+        dest.chmod(0o755)
+        print(f"  Installed binary to {dest}")
+
+    def _resolve_editable_version(self) -> str:
+        """Determine which upstream version to download for an editable install."""
+        if v := os.environ.get("LLMFIT_VERSION"):
+            return v.lstrip("v")
+
+        toml_path = Path(self.root) / "pyproject.toml"
+        text = toml_path.read_text()
+        m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+        if m and m.group(1) != "0.0.0":
+            return m.group(1)
+
+        print("[llmfit build hook] version is placeholder; fetching latest release tag")
+        with urllib.request.urlopen(GITHUB_API_LATEST) as resp:
+            return json.loads(resp.read())["tag_name"].lstrip("v")

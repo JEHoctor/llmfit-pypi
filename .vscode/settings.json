@@ -4,6 +4,7 @@
         "manylinux",
         "msvc",
         "musllinux",
-        "pypa"
+        "pypa",
+        "testpaths"
     ]
 }

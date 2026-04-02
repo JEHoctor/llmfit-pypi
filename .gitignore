@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 dist/
 *.egg-info/
+# binary cached by the hatchling hook during editable installs
+src/llmfit/_bin/
