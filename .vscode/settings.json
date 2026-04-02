@@ -1,10 +1,14 @@
 {
     "cSpell.words": [
+        "execv",
         "llmfit",
         "manylinux",
         "msvc",
         "musllinux",
         "pypa",
-        "testpaths"
+        "pydocstyle",
+        "testpaths",
+        "urlopen",
+        "urllib"
     ]
 }

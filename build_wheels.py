@@ -15,6 +15,7 @@ and injecting it into the wheel with the correct platform tag.
 Run `uv build --wheel` directly (without this script) to build a wheel for
 the current machine only — useful for local testing with pytest.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,16 +42,18 @@ TARGETS = [
 
 
 def get_latest_tag() -> str:
+    """Fetch the latest upstream release tag from the GitHub API."""
     with urllib.request.urlopen(GITHUB_API_URL) as resp:
         return json.loads(resp.read())["tag_name"]
 
 
 def update_pyproject_version(version: str) -> None:
+    """Rewrite the version field in pyproject.toml to match the upstream release."""
     toml_path = Path(__file__).parent / "pyproject.toml"
     text = toml_path.read_text()
     updated = re.sub(
         r'^(version\s*=\s*")[^"]*(")',
-        rf'\g<1>{version}\2',
+        rf"\g<1>{version}\2",
         text,
         count=1,
         flags=re.MULTILINE,
@@ -63,6 +66,7 @@ def update_pyproject_version(version: str) -> None:
 
 
 def main() -> None:
+    """Parse arguments and build wheels for all target platforms."""
     parser = argparse.ArgumentParser(
         description="Build all llmfit platform wheels via uv build.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -105,6 +109,7 @@ def main() -> None:
         result = subprocess.run(
             ["uv", "build", "--wheel", "--out-dir", str(output_dir)],
             env=env,
+            check=False,
         )
         if result.returncode != 0:
             errors.append(target)

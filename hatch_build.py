@@ -22,6 +22,7 @@ LLMFIT_VERSION
     If unset, the version is read from pyproject.toml, falling back to the
     latest GitHub release.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -40,13 +41,9 @@ from pathlib import Path
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 GITHUB_API_LATEST = "https://api.github.com/repos/AlexsJones/llmfit/releases/latest"
-GITHUB_DOWNLOAD_URL = (
-    "https://github.com/AlexsJones/llmfit/releases/download/{version_tag}/{filename}"
-)
+GITHUB_DOWNLOAD_URL = "https://github.com/AlexsJones/llmfit/releases/download/{version_tag}/{filename}"
 
-GITHUB_LICENSE_API_URL = (
-    "https://api.github.com/repos/AlexsJones/llmfit/license?ref={ref}"
-)
+GITHUB_LICENSE_API_URL = "https://api.github.com/repos/AlexsJones/llmfit/license?ref={ref}"
 
 # The SPDX identifier we claim in our LICENSE file for the upstream binary.
 # If the upstream ever relicenses, this check will catch it and the build will fail.
@@ -54,14 +51,14 @@ CLAIMED_UPSTREAM_SPDX_ID = "MIT"
 
 # target triple → (wheel_platform_tag, binary_name, is_zip)
 TARGET_CONFIGS: dict[str, tuple[str, str, bool]] = {
-    "x86_64-unknown-linux-gnu":   ("manylinux_2_17_x86_64",  "llmfit",     False),
-    "aarch64-unknown-linux-gnu":  ("manylinux_2_17_aarch64", "llmfit",     False),
-    "x86_64-unknown-linux-musl":  ("musllinux_1_2_x86_64",   "llmfit",     False),
-    "aarch64-unknown-linux-musl": ("musllinux_1_2_aarch64",  "llmfit",     False),
-    "x86_64-apple-darwin":        ("macosx_10_15_x86_64",    "llmfit",     False),
-    "aarch64-apple-darwin":       ("macosx_11_0_arm64",      "llmfit",     False),
-    "x86_64-pc-windows-msvc":     ("win_amd64",              "llmfit.exe", True),
-    "aarch64-pc-windows-msvc":    ("win_arm64",              "llmfit.exe", True),
+    "x86_64-unknown-linux-gnu": ("manylinux_2_17_x86_64", "llmfit", False),
+    "aarch64-unknown-linux-gnu": ("manylinux_2_17_aarch64", "llmfit", False),
+    "x86_64-unknown-linux-musl": ("musllinux_1_2_x86_64", "llmfit", False),
+    "aarch64-unknown-linux-musl": ("musllinux_1_2_aarch64", "llmfit", False),
+    "x86_64-apple-darwin": ("macosx_10_15_x86_64", "llmfit", False),
+    "aarch64-apple-darwin": ("macosx_11_0_arm64", "llmfit", False),
+    "x86_64-pc-windows-msvc": ("win_amd64", "llmfit.exe", True),
+    "aarch64-pc-windows-msvc": ("win_arm64", "llmfit.exe", True),
 }
 
 
@@ -78,8 +75,7 @@ def _detect_target() -> str:
         arch = "x86_64" if machine in ("amd64", "x86_64") else "aarch64"
         return f"{arch}-pc-windows-msvc"
     raise RuntimeError(
-        f"Cannot auto-detect target triple for platform {sys.platform!r}/{machine!r}. "
-        "Set LLMFIT_TARGET explicitly."
+        f"Cannot auto-detect target triple for platform {sys.platform!r}/{machine!r}. Set LLMFIT_TARGET explicitly.",
     )
 
 
@@ -89,7 +85,7 @@ def _download(url: str) -> bytes:
         return resp.read()
 
 
-def _extract(archive_bytes: bytes, binary_name: str, is_zip: bool) -> bytes:
+def _extract(archive_bytes: bytes, binary_name: str, *, is_zip: bool) -> bytes:
     if is_zip:
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
             for name in zf.namelist():
@@ -122,13 +118,11 @@ def _fetch_binary(version: str, target: str) -> bytes:
     actual_hash = hashlib.sha256(archive_bytes).hexdigest()
     if actual_hash != expected_hash:
         raise ValueError(
-            f"SHA256 mismatch for {archive_filename}:\n"
-            f"  expected: {expected_hash}\n"
-            f"  actual:   {actual_hash}"
+            f"SHA256 mismatch for {archive_filename}:\n  expected: {expected_hash}\n  actual:   {actual_hash}",
         )
     print(f"  SHA256 OK ({actual_hash[:16]}...)")
 
-    binary_data = _extract(archive_bytes, binary_name, is_zip)
+    binary_data = _extract(archive_bytes, binary_name, is_zip=is_zip)
     print(f"  Extracted {binary_name} ({len(binary_data):,} bytes)")
     return binary_data
 
@@ -154,7 +148,7 @@ def _verify_upstream_license(version_tag: str) -> None:
     except Exception as exc:
         raise RuntimeError(
             f"Could not retrieve upstream license from {url}: {exc}\n"
-            "Refusing to build while license cannot be verified."
+            "Refusing to build while license cannot be verified.",
         ) from exc
 
     spdx_id = (data.get("license") or {}).get("spdx_id", "NOASSERTION")
@@ -162,26 +156,28 @@ def _verify_upstream_license(version_tag: str) -> None:
         raise RuntimeError(
             f"GitHub could not identify the upstream license at tag {version_tag!r}. "
             f"Cannot verify our claim of {CLAIMED_UPSTREAM_SPDX_ID!r}. "
-            "Refusing to build."
+            "Refusing to build.",
         )
     if spdx_id != CLAIMED_UPSTREAM_SPDX_ID:
         raise RuntimeError(
             f"Upstream license mismatch at tag {version_tag!r}: "
             f"we claim {CLAIMED_UPSTREAM_SPDX_ID!r} but GitHub reports {spdx_id!r}. "
-            "Update LICENSE and CLAIMED_UPSTREAM_SPDX_ID before building."
+            "Update LICENSE and CLAIMED_UPSTREAM_SPDX_ID before building.",
         )
     print(f"  License OK (upstream SPDX: {spdx_id})")
 
 
 class CustomBuildHook(BuildHookInterface):
+    """Hatchling build hook that injects the llmfit binary into each wheel."""
+
     PLUGIN_NAME = "custom"
 
     def initialize(self, version: str, build_data: dict) -> None:
+        """Download the platform binary and configure the wheel before it is built."""
         target = os.environ.get("LLMFIT_TARGET") or _detect_target()
         if target not in TARGET_CONFIGS:
             raise ValueError(
-                f"Unknown LLMFIT_TARGET={target!r}. "
-                f"Must be one of: {sorted(TARGET_CONFIGS)}"
+                f"Unknown LLMFIT_TARGET={target!r}. Must be one of: {sorted(TARGET_CONFIGS)}",
             )
 
         wheel_tag, binary_name, _ = TARGET_CONFIGS[target]
@@ -203,7 +199,9 @@ class CustomBuildHook(BuildHookInterface):
 
         init_src = Path(self.root) / "src" / "llmfit" / "__init__.py"
         init_text = init_src.read_text().replace(
-            '__version__ = "0.0.0"', f'__version__ = "{version}"', 1
+            '__version__ = "0.0.0"',
+            f'__version__ = "{version}"',
+            1,
         )
         tmp_init = tmp_dir / "__init__.py"
         tmp_init.write_text(init_text)

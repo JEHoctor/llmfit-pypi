@@ -34,7 +34,55 @@ packages = ["src/llmfit"]
 path = "hatch_build.py"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["hatchling", "pytest>=8", "ruff>=0.15.8", "ty>=0.0.27"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "E501",   # Handled by ruff format (line-too-long)
+    "D100",   # undocumented-public-module
+    "D104",   # undocumented-public-package
+    "D203",   # Conflicts with D211
+    "D212",   # Conflicts with D213 (code uses second-line summary style)
+    "T201",   # print() is intentional in build hooks and scripts
+    "RUF002", # EN DASH in docstrings is an intentional style choice
+    "S310",   # urllib.request.urlopen is intentional in build scripts
+    "S603",   # subprocess with trusted input is intentional
+    "S607",   # partial executable path (uv/python) is intentional
+    "EXE001", # build_wheels.py is invoked via python, not directly
+    "TRY003", # Inline exception messages are fine in a build utility
+    "EM102",  # f-string exception messages are fine in a build utility
+]
+
+[tool.ruff.lint.per-file-ignores]
+"hatch_build.py" = [
+    "S606",   # os.execv is not used here; suppress for build context
+]
+"build_wheels.py" = [
+    "S606",   # subprocess/os usage is intentional in build scripts
+]
+"src/llmfit/__main__.py" = [
+    "S606",   # os.execv is intentional (exec-style dispatch)
+]
+"tests/*" = [
+    "S101",    # Assert statements are allowed in tests.
+    "INP001",  # No __init__.py needed in tests/.
+    "PLR2004", # Magic values are fine in tests.
+    "ANN001",  # No type annotations required on test function args.
+    "ANN201",  # No return type annotation required on test functions.
+    "D103",    # No docstrings required on test functions.
+    "S606",    # subprocess usage is intentional in tests.
+    "PLW1510", # check= is intentional omission in test subprocess calls.
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ty.environment]
+python-version = "3.8"

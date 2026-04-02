@@ -12,7 +12,6 @@ def find_llmfit_bin() -> Path:
     candidate = Path(__file__).parent / "_bin" / bin_name
     if not candidate.is_file():
         raise FileNotFoundError(
-            f"llmfit binary not found at {candidate}. "
-            "This may indicate a corrupt or pure-sdist installation."
+            f"llmfit binary not found at {candidate}. This may indicate a corrupt or pure-sdist installation.",
         )
     return candidate

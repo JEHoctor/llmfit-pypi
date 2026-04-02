@@ -9,11 +9,11 @@ from llmfit import find_llmfit_bin
 def main() -> None:
     """Entry point for the llmfit CLI (used by [project.scripts])."""
     bin_path = str(find_llmfit_bin())
-    args = [bin_path] + sys.argv[1:]
+    args = [bin_path, *sys.argv[1:]]
     if sys.platform == "win32":
-        import subprocess
+        import subprocess  # noqa: PLC0415
 
-        sys.exit(subprocess.run(args).returncode)
+        sys.exit(subprocess.run(args, check=False).returncode)
     else:
         os.execv(bin_path, args)
 
