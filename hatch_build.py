@@ -191,7 +191,7 @@ class CustomBuildHook(BuildHookInterface):
             return
 
         print(f"[llmfit build hook] target={target}  wheel tag=py3-none-{wheel_tag}")
-        _verify_upstream_license(version_tag)
+        _verify_upstream_license(f"v{version.lstrip('v')}")
 
         binary_data = _fetch_binary(version, target)
 
