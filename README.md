@@ -97,12 +97,7 @@ Publisher with these values:
 This enables OIDC authentication so the workflow can publish without storing
 API tokens.
 
-**3. Set GitHub Actions workflow permissions**
+**3. Create the GitHub Actions environment**
 
-In this repository go to **Settings → Actions → General → Workflow permissions**
-and select **Read and write permissions**. This allows `check_upstream.yml` to
-trigger `build_and_publish.yml` via `workflow_dispatch`.
-
-Also create a **GitHub Actions environment** named `pypi` (Settings →
-Environments) and optionally add a protection rule requiring manual approval
-before publishing.
+Create an environment named `pypi` (Settings → Environments) and optionally
+add a protection rule requiring manual approval before publishing.
