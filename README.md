@@ -1,4 +1,4 @@
-# llmfit
+# llmfit via PyPI
 
 Unofficial PyPI distribution of [llmfit](https://github.com/AlexsJones/llmfit) — the LLM model management CLI.
 
