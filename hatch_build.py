@@ -186,10 +186,11 @@ class CustomBuildHook(BuildHookInterface):
             self._install_editable_binary(target, binary_name)
             return
 
+        pkg_version = self.metadata.version  # e.g. "0.8.6" (no v prefix)
         print(f"[llmfit build hook] target={target}  wheel tag=py3-none-{wheel_tag}")
-        _verify_upstream_license(f"v{version.lstrip('v')}")
+        _verify_upstream_license(f"v{pkg_version}")
 
-        binary_data = _fetch_binary(version, target)
+        binary_data = _fetch_binary(pkg_version, target)
 
         # Write binary and version-stamped __init__.py to a temp dir.
         tmp_dir = Path(tempfile.mkdtemp())
@@ -200,7 +201,7 @@ class CustomBuildHook(BuildHookInterface):
         init_src = Path(self.root) / "src" / "llmfit" / "__init__.py"
         init_text = init_src.read_text().replace(
             '__version__ = "0.0.0"',
-            f'__version__ = "{version}"',
+            f'__version__ = "{pkg_version}"',
             1,
         )
         tmp_init = tmp_dir / "__init__.py"
