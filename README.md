@@ -71,33 +71,3 @@ Source for this packaging wrapper: <https://github.com/JEHoctor/llmfit-pypi>
 
 You can also trigger a build manually from the Actions tab, providing the
 version tag (e.g. `v0.8.6`).
-
-### One-time setup (required before first publish)
-
-These steps cannot be automated and must be done once by the repository owner.
-
-**1. Create the PyPI project**
-
-Register `llmfit` on PyPI (pypi.org) under your account. You can create the
-project by uploading a minimal first release (e.g. via `python -m twine upload`)
-or by registering through the PyPI web UI.
-
-**2. Configure PyPI Trusted Publisher**
-
-Go to the `llmfit` project's settings page on pypi.org and add a Trusted
-Publisher with these values:
-
-| Field | Value |
-|---|---|
-| Owner | `JEHoctor` (your GitHub username) |
-| Repository | `llmfit-pypi` |
-| Workflow name | `build_and_publish.yml` |
-| Environment name | `pypi` |
-
-This enables OIDC authentication so the workflow can publish without storing
-API tokens.
-
-**3. Create the GitHub Actions environment**
-
-Create an environment named `pypi` (Settings → Environments) and optionally
-add a protection rule requiring manual approval before publishing.
