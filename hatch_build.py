@@ -1,5 +1,5 @@
 """
-hatch_build.py  –  Hatchling build hook for llmfit.
+hatch_build.py  -  Hatchling build hook for llmfit.
 
 Downloads the pre-built binary for the target platform from GitHub Releases,
 verifies its SHA256 checksum, and injects it into the wheel at

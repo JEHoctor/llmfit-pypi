@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-build_wheels.py  –  Build all llmfit platform wheels via `uv build`.
+build_wheels.py  -  Build all llmfit platform wheels via `uv build`.
 
 Usage:
     python build_wheels.py [--version v0.8.6] [--output-dir dist] [--targets TARGET,...]
