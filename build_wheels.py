@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 build_wheels.py  -  Build all llmfit platform wheels via `uv build`.
 
