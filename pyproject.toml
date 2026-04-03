@@ -72,9 +72,6 @@ ignore = [
     "S101",    # Assert statements are allowed in tests.
     "INP001",  # No __init__.py needed in tests/.
     "PLR2004", # Magic values are fine in tests.
-    "ANN001",  # No type annotations required on test function args.
-    "ANN201",  # No return type annotation required on test functions.
-    "D103",    # No docstrings required on test functions.
     "S606",    # subprocess usage is intentional in tests.
     "PLW1510", # check= is intentional omission in test subprocess calls.
 ]
