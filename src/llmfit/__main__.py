@@ -15,7 +15,7 @@ def main() -> None:
 
         sys.exit(subprocess.run(args, check=False).returncode)
     else:
-        os.execv(bin_path, args)
+        os.execv(bin_path, args)  # noqa: S606 # arguments are sufficiently validated
 
 
 if __name__ == "__main__":
