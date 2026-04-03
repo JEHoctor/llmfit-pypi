@@ -53,8 +53,6 @@ ignore = [
     "T201",   # print() is intentional in build hooks and scripts
     "S310",   # Gave too many false positives with safe uses of urllib.request.urlopen
     "S603",   # Gave too many false positives with safe uses of subprocess.run
-    "TRY003", # Inline exception messages are fine in a build utility
-    "EM102",  # f-string exception messages are fine in a build utility
     "COM812", # This rule is redundant when using the formatter, which enforces trailing commas
 ]
 
@@ -64,6 +62,10 @@ ignore = [
 ]
 "build_wheels.py" = [
     "S606",   # subprocess/os usage is intentional in build scripts
+]
+"{hatch_build.py,build_wheels.py}" = [
+    "TRY003", # Inline exception messages are fine in a build utility
+    "EM102",  # f-string exception messages are fine in a build utility
 ]
 "src/llmfit/__main__.py" = [
     "S606",   # os.execv is intentional (exec-style dispatch)
