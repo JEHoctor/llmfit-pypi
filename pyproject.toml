@@ -51,8 +51,8 @@ ignore = [
     "D203",   # Conflicts with D211
     "D212",   # Conflicts with D213 (code uses second-line summary style)
     "T201",   # print() is intentional in build hooks and scripts
-    "S310",   # urllib.request.urlopen is intentional in build scripts
-    "S603",   # subprocess with trusted input is intentional
+    "S310",   # Gave too many false positives with safe uses of urllib.request.urlopen
+    "S603",   # Gave too many false positives with safe uses of subprocess.run
     "TRY003", # Inline exception messages are fine in a build utility
     "EM102",  # f-string exception messages are fine in a build utility
     "COM812", # This rule is redundant when using the formatter, which enforces trailing commas
