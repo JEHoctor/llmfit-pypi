@@ -107,7 +107,7 @@ def main() -> None:
         print(f"[{target}]")
         env = {**os.environ, "LLMFIT_TARGET": target}
         result = subprocess.run(
-            ["uv", "build", "--wheel", "--out-dir", str(output_dir)],
+            ["uv", "build", "--wheel", "--out-dir", str(output_dir)],  # noqa: S607 # We do want to use the uv found on the PATH.
             env=env,
             check=False,
         )

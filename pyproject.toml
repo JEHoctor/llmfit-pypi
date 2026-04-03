@@ -53,7 +53,6 @@ ignore = [
     "T201",   # print() is intentional in build hooks and scripts
     "S310",   # urllib.request.urlopen is intentional in build scripts
     "S603",   # subprocess with trusted input is intentional
-    "S607",   # partial executable path (uv/python) is intentional
     "EXE001", # build_wheels.py is invoked via python, not directly
     "TRY003", # Inline exception messages are fine in a build utility
     "EM102",  # f-string exception messages are fine in a build utility
