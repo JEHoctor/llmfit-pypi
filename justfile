@@ -4,7 +4,7 @@ default:
 
 # Run the test suite
 test:
-    uv run pytest
+    uv run pytest -vv
 
 # Format
 format:
