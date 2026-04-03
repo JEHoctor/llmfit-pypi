@@ -51,7 +51,6 @@ ignore = [
     "D203",   # Conflicts with D211
     "D212",   # Conflicts with D213 (code uses second-line summary style)
     "T201",   # print() is intentional in build hooks and scripts
-    "RUF002", # EN DASH in docstrings is an intentional style choice
     "S310",   # urllib.request.urlopen is intentional in build scripts
     "S603",   # subprocess with trusted input is intentional
     "S607",   # partial executable path (uv/python) is intentional
