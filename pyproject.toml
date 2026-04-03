@@ -57,6 +57,7 @@ ignore = [
     "EXE001", # build_wheels.py is invoked via python, not directly
     "TRY003", # Inline exception messages are fine in a build utility
     "EM102",  # f-string exception messages are fine in a build utility
+    "COM812", # This rule is redundant when using the formatter, which enforces trailing commas
 ]
 
 [tool.ruff.lint.per-file-ignores]
