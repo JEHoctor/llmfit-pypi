@@ -193,10 +193,10 @@ def _verify_upstream_license(version_tag: UpstreamVersion) -> None:
     print(f"  License OK (upstream SPDX: {spdx_id})")
 
 
-class CustomBuildHook(BuildHookInterface):
+class LlmfitBinaryBuildHook(BuildHookInterface):
     """Hatchling build hook that injects the llmfit binary into each wheel."""
 
-    PLUGIN_NAME = "custom"
+    PLUGIN_NAME = "llmfit binary from GitHub releases"
 
     def initialize(self, version: Literal["editable", "release"], build_data: dict) -> None:
         """Download the platform binary and configure the wheel before it is built."""
