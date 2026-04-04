@@ -55,7 +55,7 @@ TARGET_CONFIGS: dict[str, tuple[str, str, bool]] = {
     "aarch64-unknown-linux-gnu": ("manylinux_2_17_aarch64", "llmfit", False),
     "x86_64-unknown-linux-musl": ("musllinux_1_2_x86_64", "llmfit", False),
     "aarch64-unknown-linux-musl": ("musllinux_1_2_aarch64", "llmfit", False),
-    "x86_64-apple-darwin": ("macosx_10_15_x86_64", "llmfit", False),
+    "x86_64-apple-darwin": ("macosx_10_12_x86_64", "llmfit", False),
     "aarch64-apple-darwin": ("macosx_11_0_arm64", "llmfit", False),
     "x86_64-pc-windows-msvc": ("win_amd64", "llmfit.exe", True),
     "aarch64-pc-windows-msvc": ("win_arm64", "llmfit.exe", True),
