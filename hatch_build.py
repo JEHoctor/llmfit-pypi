@@ -20,7 +20,7 @@ LLMFIT_TARGET
 LLMFIT_VERSION
     Upstream release tag to fetch for editable installs (e.g. ``v0.8.6``).
     If unset, the version is read from pyproject.toml, falling back to the
-    latest GitHub release.
+    latest GitHub release. TODO: Never read the version from pyproject.toml.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ UpstreamVersion = NewType("UpstreamVersion", str)  # e.g. "v0.8.6"
 PyPIVersion = NewType("PyPIVersion", str)  # e.g. "0.8.6"
 
 upstream_version_re = re.compile(r"^v\d+\.\d+\.\d+$")
-pypi_version_re = re.compile(r"^\d+\.\d+\.\d+$")
+pypi_version_re = re.compile(r"^\d+\.\d+\.\d+$")  # TODO: do we need this?
 
 
 def _validate_upstream_version(upstream_version: str) -> UpstreamVersion:
@@ -76,6 +76,7 @@ def _validate_upstream_version(upstream_version: str) -> UpstreamVersion:
 
 
 def _validate_pypi_version(pypi_version: str) -> PyPIVersion:
+    # TODO: do we need this?
     if not pypi_version_re.match(pypi_version):
         raise ValueError(f"Invalid PyPI version: {pypi_version!r}")
     return PyPIVersion(pypi_version)
@@ -91,6 +92,8 @@ def _pypi_to_upstream(pypi_version: PyPIVersion) -> UpstreamVersion:
 
 def _detect_target() -> str:
     """Return the target triple for the current machine."""
+    # TODO: This should be deduced from the core metadata provided by hatchling. If that is not possible (statically, not dynamically),
+    # then we should improve this detection to cover musl and avoid default fallbacks that may be incorrect on third platforms.
     machine = platform.machine().lower()
     if sys.platform.startswith("linux"):
         arch = "x86_64" if machine in ("x86_64", "amd64") else "aarch64"
@@ -209,10 +212,14 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
         wheel_tag, binary_name, _ = TARGET_CONFIGS[target]
 
         if version == "editable":
+            # TODO: do away with this. It shouldn't be needed at all. The same binary logic should work for editable installs.
             self._install_editable_binary(target, binary_name)
             return
 
-        pkg_version: PyPIVersion = PyPIVersion(self.metadata.version)  # e.g. "0.8.6" (no v prefix)
+        # TODO: does self.metadata contain build platform information? Such as musl vs glibc?
+        pkg_version: PyPIVersion = PyPIVersion(
+            self.metadata.version
+        )  # e.g. "0.8.6" (no v prefix)  # TODO: read version from self._resolve_editable_version instead.
         upstream_version: UpstreamVersion = _pypi_to_upstream(pkg_version)  # e.g. "v0.8.6"
 
         print(f"[llmfit build hook] target={target}  wheel tag=py3-none-{wheel_tag}")
@@ -221,22 +228,30 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
         binary_data = _fetch_binary(upstream_version, target)
 
         # Write binary and version-stamped __init__.py to a temp dir.
+        # TODO: since there is no logical time to clean this up, we should use a directory in the project repo instead.
+        # We need a gitignore entry. The dir can be called downloaded_binaries. We can use the upstream version as a subdir name for organization.
+        # Don't bother trying to use to use this for caching.
         tmp_dir = Path(tempfile.mkdtemp())
         tmp_bin = tmp_dir / binary_name
         tmp_bin.write_bytes(binary_data)
         tmp_bin.chmod(0o755)
 
-        build_data["force_include"][str(tmp_bin)] = f"llmfit/_bin/{binary_name}"
+        build_data["force_include"][str(tmp_bin)] = (
+            f"llmfit/_bin/{binary_name}"  # TODO: The binary should be included via scripts instead, which ought to result in it being copied to .venv/bin.
+        )
 
         # Override the platform tag so cross-platform wheels get the right name.
         build_data["tag"] = f"py3-none-{wheel_tag}"
         build_data["pure_python"] = False
+
+        # TODO: set the package version in build_data, since hatchling won't find it in pyproject.toml anymore.
 
     def _install_editable_binary(self, target: str, binary_name: str) -> None:
         """Write the binary directly into src/llmfit/_bin/ for editable installs.
 
         The binary is cached — if it already exists it is not re-downloaded.
         """
+        # TODO: do away with this. It shouldn't be needed at all.
         bin_dir = Path(self.root) / "src" / "llmfit" / "_bin"
         dest = bin_dir / binary_name
         if dest.is_file():
@@ -254,9 +269,11 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
 
     def _resolve_editable_version(self) -> UpstreamVersion:
         """Determine which upstream version to download for an editable install."""
+        # TODO: This should be the logic for both editable and release installs.
         if v := os.environ.get("LLMFIT_VERSION"):
             return _validate_upstream_version(v)
 
+        # TODO: Don't reference pyproject.toml. Skip this and just fetch the latest release.
         toml_path = Path(self.root) / "pyproject.toml"
         text = toml_path.read_text()
         m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)

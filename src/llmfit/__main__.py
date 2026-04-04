@@ -13,8 +13,12 @@ def main() -> None:
     if sys.platform == "win32":
         import subprocess  # noqa: PLC0415
 
+        # TODO: suppress traceback on interrupt like:
+        # https://github.com/astral-sh/ruff/blob/main/python/ruff/__main__.py
+
         sys.exit(subprocess.run(args, check=False).returncode)
     else:
+        # TODO: os.execv is the right choice, but we need to ensure that the bin_path is absolute.
         os.execv(bin_path, args)  # noqa: S606 # arguments are sufficiently validated
 
 

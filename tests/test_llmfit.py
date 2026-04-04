@@ -10,6 +10,8 @@ import pytest
 import llmfit
 from llmfit import __version__, find_llmfit_bin
 
+# TODO: Should we run tests in CI? If editable builds involve very similar code paths to wheel builds then this could be useful.
+
 
 def test_version_is_string() -> None:
     """Tests that __version__ is a string."""

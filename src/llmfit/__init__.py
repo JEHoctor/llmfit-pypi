@@ -19,6 +19,10 @@ class BinaryNotFoundError(FileNotFoundError, LlmfitError):
 
 def find_llmfit_bin() -> Path:
     """Return the path to the llmfit binary bundled with this package."""
+    # TODO: See https://github.com/astral-sh/ruff/blob/main/python/ruff/_find_ruff.py
+    # What is the sysconfig module? It seems like it let's us put the binary in .venv/bin/ (aka scripts?) and locate it easily.
+    # I don't understand why the ruff version is so complex. Maybe we can do something much simpler with just sysconfig.get_path("scripts").
+    # We need to ensure this returns an absolute path.
     bin_name = "llmfit.exe" if sys.platform == "win32" else "llmfit"
     candidate = Path(__file__).parent / "_bin" / bin_name
     if not candidate.is_file():
