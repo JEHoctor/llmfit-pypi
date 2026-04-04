@@ -42,7 +42,6 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 GITHUB_API_LATEST = "https://api.github.com/repos/AlexsJones/llmfit/releases/latest"
 GITHUB_DOWNLOAD_URL = "https://github.com/AlexsJones/llmfit/releases/download/{version_tag}/{filename}"
-
 GITHUB_LICENSE_API_URL = "https://api.github.com/repos/AlexsJones/llmfit/license?ref={ref}"
 
 # The SPDX identifier we claim in our LICENSE file for the upstream binary.
