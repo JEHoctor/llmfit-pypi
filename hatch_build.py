@@ -197,17 +197,7 @@ class CustomBuildHook(BuildHookInterface):
         tmp_bin.write_bytes(binary_data)
         tmp_bin.chmod(0o755)
 
-        init_src = Path(self.root) / "src" / "llmfit" / "__init__.py"
-        init_text = init_src.read_text().replace(
-            '__version__ = "0.0.0"',
-            f'__version__ = "{pkg_version}"',
-            1,
-        )
-        tmp_init = tmp_dir / "__init__.py"
-        tmp_init.write_text(init_text)
-
         build_data["force_include"][str(tmp_bin)] = f"llmfit/_bin/{binary_name}"
-        build_data["force_include"][str(tmp_init)] = "llmfit/__init__.py"
 
         # Override the platform tag so cross-platform wheels get the right name.
         build_data["tag"] = f"py3-none-{wheel_tag}"

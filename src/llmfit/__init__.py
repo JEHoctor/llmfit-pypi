@@ -3,8 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-__version__ = "0.0.0"
-
 
 class LlmfitError(Exception):
     """Base class for llmfit exceptions."""
