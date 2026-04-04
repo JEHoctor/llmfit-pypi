@@ -6,6 +6,7 @@
         "manylinux",
         "msvc",
         "musllinux",
+        "NOASSERTION",
         "pydocstyle",
         "pypa",
         "testpaths",
