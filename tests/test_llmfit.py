@@ -21,10 +21,10 @@ def test_version_not_empty() -> None:
     assert __version__ != ""
 
 
-def test_find_llmfit_bin_raises_when_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tests that find_llmfit_bin raises FileNotFoundError when the binary cannot be found relative to __file__."""
-    monkeypatch.setattr(llmfit, "__file__", str(tmp_path / "__init__.py"))
-    with pytest.raises(FileNotFoundError):
+def test_find_llmfit_bin_raises_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests that find_llmfit_bin raises a BinaryNotFoundError when the binary is missing."""
+    monkeypatch.setattr(Path, "is_file", lambda: False)
+    with pytest.raises(llmfit.BinaryNotFoundError):
         find_llmfit_bin()
 
 
