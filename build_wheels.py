@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import urllib.request
@@ -44,23 +43,6 @@ def get_latest_tag() -> str:
     """Fetch the latest upstream release tag from the GitHub API."""
     with urllib.request.urlopen(GITHUB_API_URL) as resp:
         return json.loads(resp.read())["tag_name"]
-
-
-def update_pyproject_version(version: str) -> None:
-    """Rewrite the version field in pyproject.toml to match the upstream release."""
-    toml_path = Path(__file__).parent / "pyproject.toml"
-    text = toml_path.read_text()
-    updated = re.sub(
-        r'^(version\s*=\s*")[^"]*(")',
-        rf"\g<1>{version}\2",
-        text,
-        count=1,
-        flags=re.MULTILINE,
-    )
-    if updated == text:
-        raise RuntimeError(f"Version field not found in {toml_path}")
-    toml_path.write_text(updated)
-    print(f"  Updated pyproject.toml version -> {version}")
 
 
 def main() -> None:
@@ -97,13 +79,12 @@ def main() -> None:
 
     targets = args.targets.split(",") if args.targets else TARGETS
 
-    update_pyproject_version(version)
     print()
 
     errors: list[str] = []
     for target in targets:
         print(f"[{target}]")
-        env = {**os.environ, "LLMFIT_TARGET": target}
+        env = {**os.environ, "LLMFIT_TARGET": target, "LLMFIT_VERSION": version_tag}
         result = subprocess.run(
             ["uv", "build", "--wheel", "--out-dir", str(output_dir)],  # noqa: S607 # We do want to use the uv found on the PATH.
             env=env,
