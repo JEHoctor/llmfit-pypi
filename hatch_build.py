@@ -37,6 +37,7 @@ import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
+from typing import Literal, NewType
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
@@ -59,6 +60,33 @@ TARGET_CONFIGS: dict[str, tuple[str, str, bool]] = {
     "x86_64-pc-windows-msvc": ("win_amd64", "llmfit.exe", True),
     "aarch64-pc-windows-msvc": ("win_arm64", "llmfit.exe", True),
 }
+
+# Use the NewType system to prevent confusion between upstream and PyPI version strings.
+UpstreamVersion = NewType("UpstreamVersion", str)  # e.g. "v0.8.6"
+PyPIVersion = NewType("PyPIVersion", str)  # e.g. "0.8.6"
+
+upstream_version_re = re.compile(r"^v\d+\.\d+\.\d+$")
+pypi_version_re = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def _validate_upstream_version(upstream_version: str) -> UpstreamVersion:
+    if not upstream_version_re.match(upstream_version):
+        raise ValueError(f"Invalid upstream version: {upstream_version!r}")
+    return UpstreamVersion(upstream_version)
+
+
+def _validate_pypi_version(pypi_version: str) -> PyPIVersion:
+    if not pypi_version_re.match(pypi_version):
+        raise ValueError(f"Invalid PyPI version: {pypi_version!r}")
+    return PyPIVersion(pypi_version)
+
+
+def _upstream_to_pypi(upstream_version: UpstreamVersion) -> PyPIVersion:
+    return PyPIVersion(upstream_version.lstrip("v"))
+
+
+def _pypi_to_upstream(pypi_version: PyPIVersion) -> UpstreamVersion:
+    return UpstreamVersion(f"v{pypi_version}")
 
 
 def _detect_target() -> str:
@@ -100,10 +128,9 @@ def _extract(archive_bytes: bytes, binary_name: str, *, is_zip: bool) -> bytes:
     raise FileNotFoundError(f"{binary_name!r} not found in tar.gz archive")
 
 
-def _fetch_binary(version: str, target: str) -> bytes:
+def _fetch_binary(version_tag: UpstreamVersion, target: str) -> bytes:
     """Download, verify, and extract the binary for the given version and target."""
     _, binary_name, is_zip = TARGET_CONFIGS[target]
-    version_tag = f"v{version.lstrip('v')}"
     ext = ".zip" if is_zip else ".tar.gz"
     archive_filename = f"llmfit-{version_tag}-{target}{ext}"
     sha256_filename = f"{archive_filename}.sha256"
@@ -126,7 +153,7 @@ def _fetch_binary(version: str, target: str) -> bytes:
     return binary_data
 
 
-def _verify_upstream_license(version_tag: str) -> None:
+def _verify_upstream_license(version_tag: UpstreamVersion) -> None:
     """Fetch the upstream license via the GitHub API and confirm it matches our claim.
 
     Fails the build if the license cannot be retrieved or does not match
@@ -171,7 +198,7 @@ class CustomBuildHook(BuildHookInterface):
 
     PLUGIN_NAME = "custom"
 
-    def initialize(self, version: str, build_data: dict) -> None:
+    def initialize(self, version: Literal["editable", "release"], build_data: dict) -> None:
         """Download the platform binary and configure the wheel before it is built."""
         target = os.environ.get("LLMFIT_TARGET") or _detect_target()
         if target not in TARGET_CONFIGS:
@@ -185,11 +212,13 @@ class CustomBuildHook(BuildHookInterface):
             self._install_editable_binary(target, binary_name)
             return
 
-        pkg_version = self.metadata.version  # e.g. "0.8.6" (no v prefix)
-        print(f"[llmfit build hook] target={target}  wheel tag=py3-none-{wheel_tag}")
-        _verify_upstream_license(f"v{pkg_version}")
+        pkg_version: PyPIVersion = PyPIVersion(self.metadata.version)  # e.g. "0.8.6" (no v prefix)
+        upstream_version: UpstreamVersion = _pypi_to_upstream(pkg_version)  # e.g. "v0.8.6"
 
-        binary_data = _fetch_binary(pkg_version, target)
+        print(f"[llmfit build hook] target={target}  wheel tag=py3-none-{wheel_tag}")
+        _verify_upstream_license(upstream_version)
+
+        binary_data = _fetch_binary(upstream_version, target)
 
         # Write binary and version-stamped __init__.py to a temp dir.
         tmp_dir = Path(tempfile.mkdtemp())
@@ -214,26 +243,26 @@ class CustomBuildHook(BuildHookInterface):
             print(f"[llmfit build hook] editable: binary already present at {dest}")
             return
 
-        version = self._resolve_editable_version()
-        print(f"[llmfit build hook] editable: target={target}  version={version}")
+        upstream_version: UpstreamVersion = self._resolve_editable_version()
+        print(f"[llmfit build hook] editable: target={target}  version={upstream_version}")
 
-        binary_data = _fetch_binary(version, target)
+        binary_data = _fetch_binary(upstream_version, target)
         bin_dir.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(binary_data)
         dest.chmod(0o755)
         print(f"  Installed binary to {dest}")
 
-    def _resolve_editable_version(self) -> str:
+    def _resolve_editable_version(self) -> UpstreamVersion:
         """Determine which upstream version to download for an editable install."""
         if v := os.environ.get("LLMFIT_VERSION"):
-            return v.lstrip("v")
+            return _validate_upstream_version(v)
 
         toml_path = Path(self.root) / "pyproject.toml"
         text = toml_path.read_text()
         m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
         if m and m.group(1) != "0.0.0":
-            return m.group(1)
+            return _pypi_to_upstream(PyPIVersion(m.group(1)))
 
         print("[llmfit build hook] version is placeholder; fetching latest release tag")
         with urllib.request.urlopen(GITHUB_API_LATEST) as resp:
-            return json.loads(resp.read())["tag_name"].lstrip("v")
+            return UpstreamVersion(json.loads(resp.read())["tag_name"])
