@@ -58,10 +58,9 @@ def update_pyproject_version(version: str) -> None:
         flags=re.MULTILINE,
     )
     if updated == text:
-        print(f"  WARNING: version field not found in {toml_path}")
-    else:
-        toml_path.write_text(updated)
-        print(f"  Updated pyproject.toml version -> {version}")
+        raise RuntimeError(f"Version field not found in {toml_path}")
+    toml_path.write_text(updated)
+    print(f"  Updated pyproject.toml version -> {version}")
 
 
 def main() -> None:
