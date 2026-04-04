@@ -34,7 +34,13 @@ packages = ["src/llmfit"]
 path = "hatch_build.py"
 
 [dependency-groups]
-dev = ["hatchling", "pytest>=8", "ruff>=0.15.8", "ty>=0.0.27"]
+dev = [
+    "hatchling",
+    "ipython>=8.12.3",
+    "pytest>=8",
+    "ruff>=0.15.8",
+    "ty>=0.0.27",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
