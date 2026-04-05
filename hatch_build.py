@@ -2,8 +2,9 @@
 hatch_build.py  -  Hatchling build hook for llmfit.
 
 Downloads the pre-built binary for the target platform from GitHub Releases,
-verifies its SHA256 checksum, and injects it into the wheel at
-llmfit/_bin/{binary_name}.  Also overrides the wheel platform tag so that
+verifies its SHA256 checksum, and injects it into the wheel via shared_scripts
+so that the installer places it in the environment's scripts directory
+(e.g. ``.venv/bin/llmfit``).  Also overrides the wheel platform tag so that
 cross-platform wheels can be produced from a single Linux CI runner.
 
 For editable installs (``uv sync``, ``uv run``), the binary is written
@@ -33,7 +34,6 @@ import platform
 import re
 import sys
 import tarfile
-import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -227,24 +227,20 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
 
         binary_data = _fetch_binary(upstream_version, target)
 
-        # Write binary and version-stamped __init__.py to a temp dir.
-        # TODO: since there is no logical time to clean this up, we should use a directory in the project repo instead.
-        # We need a gitignore entry. The dir can be called downloaded_binaries. We can use the upstream version as a subdir name for organization.
-        # Don't bother trying to use to use this for caching.
-        tmp_dir = Path(tempfile.mkdtemp())
-        tmp_bin = tmp_dir / binary_name
-        tmp_bin.write_bytes(binary_data)
-        tmp_bin.chmod(0o755)
+        # Write binary to a versioned subdirectory of downloaded_binaries/ (gitignored).
+        bin_dir = Path(self.root) / "downloaded_binaries" / upstream_version
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        bin_path = bin_dir / binary_name
+        bin_path.write_bytes(binary_data)
+        bin_path.chmod(0o755)
 
-        build_data["force_include"][str(tmp_bin)] = (
-            f"llmfit/_bin/{binary_name}"  # TODO: The binary should be included via scripts instead, which ought to result in it being copied to .venv/bin.
-        )
+        # Place the binary in the wheel's scripts directory so that the
+        # installer puts it in .venv/bin/ (or Scripts/ on Windows).
+        build_data["shared_scripts"][str(bin_path)] = binary_name
 
         # Override the platform tag so cross-platform wheels get the right name.
         build_data["tag"] = f"py3-none-{wheel_tag}"
         build_data["pure_python"] = False
-
-        # TODO: set the package version in build_data, since hatchling won't find it in pyproject.toml anymore.
 
     def _install_editable_binary(self, target: str, binary_name: str) -> None:
         """Write the binary directly into src/llmfit/_bin/ for editable installs.
