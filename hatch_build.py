@@ -63,21 +63,10 @@ TARGET_CONFIGS: dict[str, tuple[str, str, bool]] = {
 UpstreamVersion = NewType("UpstreamVersion", str)  # e.g. "v0.8.6"
 PyPIVersion = NewType("PyPIVersion", str)  # e.g. "0.8.6"
 
-upstream_version_re = re.compile(r"^v\d+\.\d+\.\d+$")
-pypi_version_re = re.compile(r"^\d+\.\d+\.\d+$")  # TODO: do we need this?
-
-
 def _validate_upstream_version(upstream_version: str) -> UpstreamVersion:
-    if not upstream_version_re.match(upstream_version):
+    if not re.match(r"^v\d+\.\d+\.\d+$", upstream_version):
         raise ValueError(f"Invalid upstream version: {upstream_version!r}")
     return UpstreamVersion(upstream_version)
-
-
-def _validate_pypi_version(pypi_version: str) -> PyPIVersion:
-    # TODO: do we need this?
-    if not pypi_version_re.match(pypi_version):
-        raise ValueError(f"Invalid PyPI version: {pypi_version!r}")
-    return PyPIVersion(pypi_version)
 
 
 def _upstream_to_pypi(upstream_version: UpstreamVersion) -> PyPIVersion:
