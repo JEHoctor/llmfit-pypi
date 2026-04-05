@@ -7,10 +7,8 @@ so that the installer places it in the environment's scripts directory
 (e.g. ``.venv/bin/llmfit``).  Also overrides the wheel platform tag so that
 cross-platform wheels can be produced from a single Linux CI runner.
 
-For editable installs (``uv sync``, ``uv run``), the binary is written
-directly into ``src/llmfit/_bin/`` so that ``find_llmfit_bin()`` works
-without a full wheel build.  The binary is cached there and re-downloaded
-only when absent.
+For editable installs (``uv sync``, ``uv run``), the same mechanism is used
+so that ``find_llmfit_bin()`` works via ``sysconfig.get_path("scripts")``.
 
 Environment variables
 ---------------------
@@ -19,9 +17,9 @@ LLMFIT_TARGET
     If unset, the current machine's platform is auto-detected.  Set this
     explicitly when building for a platform other than the host.
 LLMFIT_VERSION
-    Upstream release tag to fetch for editable installs (e.g. ``v0.8.6``).
-    If unset, the version is read from pyproject.toml, falling back to the
-    latest GitHub release. TODO: Never read the version from pyproject.toml.
+    Upstream release tag to fetch, including the leading ``v``
+    (e.g. ``v0.8.6``).  If unset, the latest GitHub release is fetched
+    automatically.
 """
 
 from __future__ import annotations
@@ -88,6 +86,27 @@ def _upstream_to_pypi(upstream_version: UpstreamVersion) -> PyPIVersion:
 
 def _pypi_to_upstream(pypi_version: PyPIVersion) -> UpstreamVersion:
     return UpstreamVersion(f"v{pypi_version}")
+
+
+def get_version() -> PyPIVersion:
+    """Return the PyPI package version.
+
+    Called by hatchling's ``code`` version source (see ``[tool.hatch.version]``
+    in pyproject.toml).
+
+    Resolution order:
+
+    1. ``LLMFIT_VERSION`` environment variable — must be an upstream tag with
+       a leading ``v`` (e.g. ``v0.8.6``).  ``build_wheels.py`` sets this.
+    2. Latest upstream release fetched from the GitHub API.
+    """
+    v = os.environ.get("LLMFIT_VERSION")
+    if v:
+        return _upstream_to_pypi(_validate_upstream_version(v))
+    print("[llmfit] LLMFIT_VERSION not set; fetching latest release tag from GitHub")
+    with urllib.request.urlopen(GITHUB_API_LATEST) as resp:
+        tag = json.loads(resp.read())["tag_name"]
+    return _upstream_to_pypi(_validate_upstream_version(tag))
 
 
 def _detect_target() -> str:
@@ -201,7 +220,7 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
 
     PLUGIN_NAME = "llmfit binary from GitHub releases"
 
-    def initialize(self, version: Literal["editable", "release"], build_data: dict) -> None:
+    def initialize(self, version: Literal["editable", "release"], build_data: dict) -> None:  # noqa: ARG002
         """Download the platform binary and configure the wheel before it is built."""
         target = os.environ.get("LLMFIT_TARGET") or _detect_target()
         if target not in TARGET_CONFIGS:
@@ -210,19 +229,10 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
             )
 
         wheel_tag, binary_name, _ = TARGET_CONFIGS[target]
+        # hatchling has already called get_version() to populate self.metadata.version
+        upstream_version: UpstreamVersion = _pypi_to_upstream(PyPIVersion(self.metadata.version))
 
-        if version == "editable":
-            # TODO: do away with this. It shouldn't be needed at all. The same binary logic should work for editable installs.
-            self._install_editable_binary(target, binary_name)
-            return
-
-        # TODO: does self.metadata contain build platform information? Such as musl vs glibc?
-        pkg_version: PyPIVersion = PyPIVersion(
-            self.metadata.version
-        )  # e.g. "0.8.6" (no v prefix)  # TODO: read version from self._resolve_editable_version instead.
-        upstream_version: UpstreamVersion = _pypi_to_upstream(pkg_version)  # e.g. "v0.8.6"
-
-        print(f"[llmfit build hook] target={target}  wheel tag=py3-none-{wheel_tag}")
+        print(f"[llmfit build hook] target={target}  version={upstream_version}  wheel tag=py3-none-{wheel_tag}")
         _verify_upstream_license(upstream_version)
 
         binary_data = _fetch_binary(upstream_version, target)
@@ -241,41 +251,3 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
         # Override the platform tag so cross-platform wheels get the right name.
         build_data["tag"] = f"py3-none-{wheel_tag}"
         build_data["pure_python"] = False
-
-    def _install_editable_binary(self, target: str, binary_name: str) -> None:
-        """Write the binary directly into src/llmfit/_bin/ for editable installs.
-
-        The binary is cached — if it already exists it is not re-downloaded.
-        """
-        # TODO: do away with this. It shouldn't be needed at all.
-        bin_dir = Path(self.root) / "src" / "llmfit" / "_bin"
-        dest = bin_dir / binary_name
-        if dest.is_file():
-            print(f"[llmfit build hook] editable: binary already present at {dest}")
-            return
-
-        upstream_version: UpstreamVersion = self._resolve_editable_version()
-        print(f"[llmfit build hook] editable: target={target}  version={upstream_version}")
-
-        binary_data = _fetch_binary(upstream_version, target)
-        bin_dir.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(binary_data)
-        dest.chmod(0o755)
-        print(f"  Installed binary to {dest}")
-
-    def _resolve_editable_version(self) -> UpstreamVersion:
-        """Determine which upstream version to download for an editable install."""
-        # TODO: This should be the logic for both editable and release installs.
-        if v := os.environ.get("LLMFIT_VERSION"):
-            return _validate_upstream_version(v)
-
-        # TODO: Don't reference pyproject.toml. Skip this and just fetch the latest release.
-        toml_path = Path(self.root) / "pyproject.toml"
-        text = toml_path.read_text()
-        m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
-        if m and m.group(1) != "0.0.0":
-            return _pypi_to_upstream(PyPIVersion(m.group(1)))
-
-        print("[llmfit build hook] version is placeholder; fetching latest release tag")
-        with urllib.request.urlopen(GITHUB_API_LATEST) as resp:
-            return UpstreamVersion(json.loads(resp.read())["tag_name"])
