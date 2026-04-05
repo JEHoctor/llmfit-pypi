@@ -7,18 +7,18 @@ from llmfit import find_llmfit_bin
 
 
 def main() -> None:
-    """Entry point for the llmfit CLI (used by [project.scripts])."""
+    """Entry point for the llmfit CLI."""
     bin_path = str(find_llmfit_bin())
     args = [bin_path, *sys.argv[1:]]
     if sys.platform == "win32":
         import subprocess  # noqa: PLC0415
 
-        # TODO: suppress traceback on interrupt like:
-        # https://github.com/astral-sh/ruff/blob/main/python/ruff/__main__.py
-
-        sys.exit(subprocess.run(args, check=False).returncode)
+        try:
+            completed_process = subprocess.run(args, check=False)
+        except KeyboardInterrupt:
+            sys.exit(2)
+        sys.exit(completed_process.returncode)
     else:
-        # TODO: os.execv is the right choice, but we need to ensure that the bin_path is absolute.
         os.execv(bin_path, args)  # noqa: S606 # arguments are sufficiently validated
 
 
