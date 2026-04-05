@@ -32,12 +32,14 @@ import platform
 import re
 import sys
 import tarfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Literal, NewType
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+from hatchling.metadata.plugin.interface import MetadataHookInterface
 
 GITHUB_API_LATEST = "https://api.github.com/repos/AlexsJones/llmfit/releases/latest"
 GITHUB_DOWNLOAD_URL = "https://github.com/AlexsJones/llmfit/releases/download/{version_tag}/{filename}"
@@ -164,11 +166,12 @@ def _fetch_binary(version_tag: UpstreamVersion, target: str) -> bytes:
     return binary_data
 
 
-def _verify_upstream_license(version_tag: UpstreamVersion) -> None:
+def _verify_upstream_license(version_tag: UpstreamVersion) -> str | None:
     """Fetch the upstream license via the GitHub API and confirm it matches our claim.
 
-    Fails the build if the license cannot be retrieved or does not match
-    ``CLAIMED_UPSTREAM_SPDX_ID``.
+    Returns ``None`` on success (and prints a confirmation message).  Returns a
+    non-empty warning message string on any failure: network errors, unidentified
+    licenses, or mismatches.  Never raises.
     """
     url = GITHUB_LICENSE_API_URL.format(ref=version_tag)
     print(f"  GET {url}")
@@ -182,26 +185,44 @@ def _verify_upstream_license(version_tag: UpstreamVersion) -> None:
     try:
         with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read())
-    except Exception as exc:
-        raise RuntimeError(
-            f"Could not retrieve upstream license from {url}: {exc}\n"
-            "Refusing to build while license cannot be verified.",
-        ) from exc
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return f"Could not retrieve upstream license from {url}: {exc}"
 
     spdx_id = (data.get("license") or {}).get("spdx_id", "NOASSERTION")
     if spdx_id == "NOASSERTION":
-        raise RuntimeError(
+        return (
             f"GitHub could not identify the upstream license at tag {version_tag!r}. "
-            f"Cannot verify our claim of {CLAIMED_UPSTREAM_SPDX_ID!r}. "
-            "Refusing to build.",
+            f"Cannot verify our claim of {CLAIMED_UPSTREAM_SPDX_ID!r}."
         )
     if spdx_id != CLAIMED_UPSTREAM_SPDX_ID:
-        raise RuntimeError(
+        return (
             f"Upstream license mismatch at tag {version_tag!r}: "
             f"we claim {CLAIMED_UPSTREAM_SPDX_ID!r} but GitHub reports {spdx_id!r}. "
-            "Update LICENSE and CLAIMED_UPSTREAM_SPDX_ID before building.",
+            "Update LICENSE and CLAIMED_UPSTREAM_SPDX_ID to resolve this."
         )
     print(f"  License OK (upstream SPDX: {spdx_id})")
+    return None
+
+
+class LlmfitMetadataHook(MetadataHookInterface):
+    """Hatchling metadata hook that sets version and license dynamically.
+
+    Version is resolved from ``LLMFIT_VERSION`` or the latest GitHub release.
+    License is verified against the upstream GitHub API; the build fails if
+    the license cannot be confirmed.
+    """
+
+    PLUGIN_NAME = "custom"
+
+    def update(self, metadata: dict) -> None:
+        """Populate ``version`` and ``license`` in the project metadata table."""
+        upstream_version = _pypi_to_upstream(get_version())
+        metadata["version"] = _upstream_to_pypi(upstream_version)
+
+        license_warning = _verify_upstream_license(upstream_version)
+        if license_warning:
+            raise RuntimeError(f"{license_warning} Refusing to build.")
+        metadata["license"] = {"text": CLAIMED_UPSTREAM_SPDX_ID}
 
 
 class LlmfitBinaryBuildHook(BuildHookInterface):
@@ -222,7 +243,6 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
         upstream_version: UpstreamVersion = _pypi_to_upstream(PyPIVersion(self.metadata.version))
 
         print(f"[llmfit build hook] target={target}  version={upstream_version}  wheel tag=py3-none-{wheel_tag}")
-        _verify_upstream_license(upstream_version)
 
         binary_data = _fetch_binary(upstream_version, target)
 

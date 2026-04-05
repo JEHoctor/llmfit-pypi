@@ -1,12 +1,11 @@
 [project]
 name = "llmfit"
-dynamic = ["version"]
+dynamic = ["version", "license"]
 description = "Unofficial PyPI distribution of llmfit – the LLM model management CLI"
 authors = [
     { name = "James Hoctor", email = "JEHoctor@protonmail.com" }
 ]
 readme = "README.md"
-license = { file = "LICENSE" }
 requires-python = ">=3.8"
 keywords = ["llm", "cli", "machine-learning", "model-management"]
 classifiers = [
@@ -24,10 +23,8 @@ Homepage = "https://github.com/AlexsJones/llmfit"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.version]
-source = "code"
+[tool.hatch.metadata.hooks.custom]
 path = "hatch_build.py"
-expression = "get_version()"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/llmfit"]
