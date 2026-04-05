@@ -37,10 +37,41 @@ jobs:
           if-no-files-found: error
 
   # ------------------------------------------------------------------
+  # Install the glibc x86_64 wheel and run the test suite
+  # ------------------------------------------------------------------
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: wheels
+          path: dist/
+
+      - name: Install dev environment with built wheel
+        run: |
+          uv sync --no-install-package llmfit
+          uv pip install --find-links dist/ llmfit
+
+      - name: Run tests
+        run: uv run pytest
+
+  # ------------------------------------------------------------------
   # Publish to PyPI via OIDC trusted publisher (no API tokens needed)
   # ------------------------------------------------------------------
   publish:
-    needs: build
+    needs: [build, test]
     runs-on: ubuntu-latest
     environment:
       name: pypi
