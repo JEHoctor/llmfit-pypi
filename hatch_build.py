@@ -36,7 +36,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Literal, NewType
+from typing import NewType
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 from hatchling.metadata.plugin.interface import MetadataHookInterface
@@ -231,7 +231,7 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
 
     PLUGIN_NAME = "llmfit binary from GitHub releases"
 
-    def initialize(self, version: Literal["editable", "release"], build_data: dict) -> None:  # noqa: ARG002
+    def initialize(self, version: str, build_data: dict) -> None:  # noqa: ARG002
         """Download the platform binary and configure the wheel before it is built."""
         target = os.environ.get("LLMFIT_TARGET") or _detect_target()
         if target not in TARGET_CONFIGS:
