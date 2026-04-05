@@ -204,11 +204,15 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
         archive_url = GITHUB_DOWNLOAD_URL.format(version_tag=upstream_version, filename=archive_filename)
         sha256_url = GITHUB_DOWNLOAD_URL.format(version_tag=upstream_version, filename=sha256_filename)
 
-        # Write binary to a versioned subdirectory of downloaded_binaries/ (gitignored).
-        bin_dir = Path(self.root) / "downloaded_binaries" / upstream_version
+        # Write archive and binary to a subdirectory of artifacts/ (gitignored).
+        archive_dir = Path(self.root) / "artifacts" / "archives"
+        bin_dir = Path(self.root) / "artifacts" / "binaries" / upstream_version
+        archive_dir.mkdir(parents=True, exist_ok=True)
         bin_dir.mkdir(parents=True, exist_ok=True)
-        bin_path = bin_dir / f"llmfit-{upstream_target}{'.exe' if binary_name == 'llmfit.exe' else ''}"
-        archive_bytes = bin_path.read_bytes() if bin_path.is_file() else self._download(archive_url)
+        archive_path = archive_dir / archive_filename
+        bin_path = bin_dir / f"llmfit-{upstream_target}{'.exe' if binary_name.endswith('.exe') else ''}"
+
+        archive_bytes = archive_path.read_bytes() if archive_path.is_file() else self._download(archive_url)
 
         sha256_content = self._download(sha256_url).decode()
         expected_hash = sha256_content.split()[0]
@@ -222,9 +226,9 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
         binary_data = self._extract(archive_bytes, binary_name, is_zip=is_zip)
         print(f"  Extracted {binary_name} ({len(binary_data):,} bytes)")
 
-        if not bin_path.is_file():
-            bin_path.write_bytes(archive_bytes)
-
+        if not archive_path.is_file():
+            archive_path.write_bytes(archive_bytes)
+        bin_path.write_bytes(binary_data)
         bin_path.chmod(0o755)
         return bin_path
 
