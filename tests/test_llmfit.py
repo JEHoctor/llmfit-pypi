@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -27,3 +28,8 @@ def test_binary_runs() -> None:
     """Tests that the llmfit binary runs successfully."""
     result = subprocess.run([find_llmfit_bin(), "--help"], capture_output=True, check=False)
     assert result.returncode == 0
+
+
+def test_version() -> None:
+    """Tests that llmfit.__version__ is a valid semantic version."""
+    assert re.match(r"^\d+\.\d+\.\d+$", llmfit.__version__) is not None

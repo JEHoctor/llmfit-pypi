@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import sys
 import sysconfig
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+
+try:
+    __version__ = version("llmfit")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 
 class LlmfitError(Exception):
