@@ -231,7 +231,7 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
 
     PLUGIN_NAME = "llmfit binary from GitHub releases"
 
-    def initialize(self, version: str, build_data: dict) -> None:  # noqa: ARG002
+    def initialize(self, version: str, build_data: dict) -> None:
         """Download the platform binary and configure the wheel before it is built."""
         target = os.environ.get("LLMFIT_TARGET") or _detect_target()
         if target not in TARGET_CONFIGS:
