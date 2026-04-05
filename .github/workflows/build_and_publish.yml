@@ -65,7 +65,7 @@ jobs:
           uv pip install --find-links dist/ llmfit
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run pytest -vv
 
   # ------------------------------------------------------------------
   # Publish to PyPI via OIDC trusted publisher (no API tokens needed)
