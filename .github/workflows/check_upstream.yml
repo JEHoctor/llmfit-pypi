@@ -2,7 +2,7 @@ name: Check for new llmfit release
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # Daily at 06:00 UTC
+    - cron: '0 */6 * * *'  # Every 6 hours
   workflow_dispatch:       # Allow manual trigger
 
 jobs:
