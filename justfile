@@ -22,3 +22,7 @@ typecheck:
 # Build a wheel for the current platform (useful for local testing)
 build:
     uv build --wheel
+
+# Build wheels for all platforms
+build-all:
+    uv run python build_wheels.py

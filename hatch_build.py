@@ -2,25 +2,24 @@
 hatch_build.py  -  Hatchling build hook for llmfit.
 
 Downloads the pre-built binary for the target platform from GitHub Releases,
-verifies its SHA256 checksum, and injects it into the wheel at
-llmfit/_bin/{binary_name}.  Also overrides the wheel platform tag so that
+verifies its SHA256 checksum, and injects it into the wheel via shared_scripts
+so that the installer places it in the environment's scripts directory
+(e.g. ``.venv/bin/llmfit``).  Also overrides the wheel platform tag so that
 cross-platform wheels can be produced from a single Linux CI runner.
 
-For editable installs (``uv sync``, ``uv run``), the binary is written
-directly into ``src/llmfit/_bin/`` so that ``find_llmfit_bin()`` works
-without a full wheel build.  The binary is cached there and re-downloaded
-only when absent.
+For editable installs (``uv sync``, ``uv run``), the same mechanism is used
+so that ``find_llmfit_bin()`` works via ``sysconfig.get_path("scripts")``.
 
 Environment variables
 ---------------------
-LLMFIT_TARGET
-    Target triple to build for (e.g. ``x86_64-unknown-linux-gnu``).
+LLMFIT_PYTHON_PLATFORM_TAG
+    Wheel platform tag to build for (e.g. ``manylinux_2_17_x86_64``).
     If unset, the current machine's platform is auto-detected.  Set this
     explicitly when building for a platform other than the host.
-LLMFIT_VERSION
-    Upstream release tag to fetch for editable installs (e.g. ``v0.8.6``).
-    If unset, the version is read from pyproject.toml, falling back to the
-    latest GitHub release.
+LLMFIT_UPSTREAM_VERSION
+    Upstream release tag to fetch, including the leading ``v``
+    (e.g. ``v0.8.6``).  If unset, the latest GitHub release is fetched
+    automatically.
 """
 
 from __future__ import annotations
@@ -29,16 +28,17 @@ import hashlib
 import io
 import json
 import os
-import platform
 import re
-import sys
 import tarfile
-import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
+from typing import NewType
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+from hatchling.metadata.plugin.interface import MetadataHookInterface
+from packaging.tags import sys_tags
 
 GITHUB_API_LATEST = "https://api.github.com/repos/AlexsJones/llmfit/releases/latest"
 GITHUB_DOWNLOAD_URL = "https://github.com/AlexsJones/llmfit/releases/download/{version_tag}/{filename}"
@@ -48,202 +48,220 @@ GITHUB_LICENSE_API_URL = "https://api.github.com/repos/AlexsJones/llmfit/license
 # If the upstream ever relicenses, this check will catch it and the build will fail.
 CLAIMED_UPSTREAM_SPDX_ID = "MIT"
 
-# target triple → (wheel_platform_tag, binary_name, is_zip)
+# wheel_platform_tag -> (upstream_target, binary_name, is_zip)
 TARGET_CONFIGS: dict[str, tuple[str, str, bool]] = {
-    "x86_64-unknown-linux-gnu": ("manylinux_2_17_x86_64", "llmfit", False),
-    "aarch64-unknown-linux-gnu": ("manylinux_2_17_aarch64", "llmfit", False),
-    "x86_64-unknown-linux-musl": ("musllinux_1_2_x86_64", "llmfit", False),
-    "aarch64-unknown-linux-musl": ("musllinux_1_2_aarch64", "llmfit", False),
-    "x86_64-apple-darwin": ("macosx_10_12_x86_64", "llmfit", False),
-    "aarch64-apple-darwin": ("macosx_11_0_arm64", "llmfit", False),
-    "x86_64-pc-windows-msvc": ("win_amd64", "llmfit.exe", True),
-    "aarch64-pc-windows-msvc": ("win_arm64", "llmfit.exe", True),
+    "manylinux_2_17_x86_64": ("x86_64-unknown-linux-gnu", "llmfit", False),
+    "manylinux_2_17_aarch64": ("aarch64-unknown-linux-gnu", "llmfit", False),
+    "musllinux_1_2_x86_64": ("x86_64-unknown-linux-musl", "llmfit", False),
+    "musllinux_1_2_aarch64": ("aarch64-unknown-linux-musl", "llmfit", False),
+    "macosx_10_12_x86_64": ("x86_64-apple-darwin", "llmfit", False),
+    "macosx_11_0_arm64": ("aarch64-apple-darwin", "llmfit", False),
+    "win_amd64": ("x86_64-pc-windows-msvc", "llmfit.exe", True),
+    "win_arm64": ("aarch64-pc-windows-msvc", "llmfit.exe", True),
 }
 
-
-def _detect_target() -> str:
-    """Return the target triple for the current machine."""
-    machine = platform.machine().lower()
-    if sys.platform.startswith("linux"):
-        arch = "x86_64" if machine in ("x86_64", "amd64") else "aarch64"
-        return f"{arch}-unknown-linux-gnu"
-    if sys.platform == "darwin":
-        arch = "x86_64" if machine == "x86_64" else "aarch64"
-        return f"{arch}-apple-darwin"
-    if sys.platform == "win32":
-        arch = "x86_64" if machine in ("amd64", "x86_64") else "aarch64"
-        return f"{arch}-pc-windows-msvc"
-    raise RuntimeError(
-        f"Cannot auto-detect target triple for platform {sys.platform!r}/{machine!r}. Set LLMFIT_TARGET explicitly.",
-    )
+# Use the NewType system to prevent confusion between upstream and PyPI version strings.
+UpstreamVersion = NewType("UpstreamVersion", str)  # e.g. "v0.8.6"
+PyPIVersion = NewType("PyPIVersion", str)  # e.g. "0.8.6"
 
 
-def _download(url: str) -> bytes:
-    print(f"  GET {url}")
-    with urllib.request.urlopen(url) as resp:
-        return resp.read()
+def _validate_upstream_version(upstream_version: str) -> UpstreamVersion:
+    if not re.match(r"^v\d+\.\d+\.\d+$", upstream_version):
+        raise ValueError(f"Invalid upstream version: {upstream_version!r}")
+    return UpstreamVersion(upstream_version)
 
 
-def _extract(archive_bytes: bytes, binary_name: str, *, is_zip: bool) -> bytes:
-    if is_zip:
-        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
-            for name in zf.namelist():
-                if Path(name).name == binary_name:
-                    return zf.read(name)
-        raise FileNotFoundError(f"{binary_name!r} not found in zip archive")
-    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as tf:
-        for member in tf.getmembers():
-            if Path(member.name).name == binary_name:
-                f = tf.extractfile(member)
-                if f is not None:
-                    return f.read()
-    raise FileNotFoundError(f"{binary_name!r} not found in tar.gz archive")
+def _upstream_to_pypi(upstream_version: UpstreamVersion) -> PyPIVersion:
+    return PyPIVersion(upstream_version.lstrip("v"))
 
 
-def _fetch_binary(version: str, target: str) -> bytes:
-    """Download, verify, and extract the binary for the given version and target."""
-    _, binary_name, is_zip = TARGET_CONFIGS[target]
-    version_tag = f"v{version.lstrip('v')}"
-    ext = ".zip" if is_zip else ".tar.gz"
-    archive_filename = f"llmfit-{version_tag}-{target}{ext}"
-    sha256_filename = f"{archive_filename}.sha256"
+def _pypi_to_upstream(pypi_version: PyPIVersion) -> UpstreamVersion:
+    return UpstreamVersion(f"v{pypi_version}")
 
-    archive_url = GITHUB_DOWNLOAD_URL.format(version_tag=version_tag, filename=archive_filename)
-    sha256_url = GITHUB_DOWNLOAD_URL.format(version_tag=version_tag, filename=sha256_filename)
 
-    archive_bytes = _download(archive_url)
-    sha256_content = _download(sha256_url).decode()
-    expected_hash = sha256_content.split()[0]
-    actual_hash = hashlib.sha256(archive_bytes).hexdigest()
-    if actual_hash != expected_hash:
-        raise ValueError(
-            f"SHA256 mismatch for {archive_filename}:\n  expected: {expected_hash}\n  actual:   {actual_hash}",
+class LlmfitMetadataHook(MetadataHookInterface):
+    """Hatchling metadata hook that sets version and license dynamically."""
+
+    PLUGIN_NAME = "llmfit version and license information"
+
+    @staticmethod
+    def _get_upstream_version() -> UpstreamVersion:
+        """Return the upstream llmfit version to package.
+
+        Resolution order:
+
+        1. ``LLMFIT_UPSTREAM_VERSION`` environment variable — must be an upstream version tag with
+           a leading ``v`` (e.g. ``v0.8.6``).  ``build_wheels.py`` sets this.
+        2. Latest upstream release fetched from the GitHub API.
+        """
+        v = os.environ.get("LLMFIT_UPSTREAM_VERSION")
+        if v:
+            return _validate_upstream_version(v)
+        print("  LLMFIT_UPSTREAM_VERSION not set; fetching latest release tag from GitHub")
+        with urllib.request.urlopen(GITHUB_API_LATEST) as resp:
+            tag = json.loads(resp.read())["tag_name"]
+        return _validate_upstream_version(tag)
+
+    @staticmethod
+    def _verify_upstream_license(version_tag: UpstreamVersion) -> str | None:
+        """Fetch the upstream license via the GitHub API and confirm it matches our claim.
+
+        Returns ``None`` on success (and prints a confirmation message).  Returns a
+        non-empty warning message string on any failure: network errors, unidentified
+        licenses, or mismatches.  Never raises.
+        """
+        url = GITHUB_LICENSE_API_URL.format(ref=version_tag)
+        print(f"  GET {url}")
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
         )
-    print(f"  SHA256 OK ({actual_hash[:16]}...)")
+        try:
+            with urllib.request.urlopen(req) as resp:
+                data = json.loads(resp.read())
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            return f"Could not retrieve upstream license from {url}: {exc}"
 
-    binary_data = _extract(archive_bytes, binary_name, is_zip=is_zip)
-    print(f"  Extracted {binary_name} ({len(binary_data):,} bytes)")
-    return binary_data
+        spdx_id = (data.get("license") or {}).get("spdx_id", "NOASSERTION")
+        if spdx_id == "NOASSERTION":
+            return (
+                f"GitHub could not identify the upstream license at tag {version_tag!r}. "
+                f"Cannot verify our claim of {CLAIMED_UPSTREAM_SPDX_ID!r}."
+            )
+        if spdx_id != CLAIMED_UPSTREAM_SPDX_ID:
+            return (
+                f"Upstream license mismatch at tag {version_tag!r}: "
+                f"we claim {CLAIMED_UPSTREAM_SPDX_ID!r} but GitHub reports {spdx_id!r}. "
+                "Update LICENSE and CLAIMED_UPSTREAM_SPDX_ID to resolve this."
+            )
+        print(f"  License OK (upstream SPDX: {spdx_id})")
+        return None
+
+    def update(self, metadata: dict) -> None:
+        """Populate ``version``, ``license-expression``, and ``license-files`` in the project metadata table."""
+        upstream_version = self._get_upstream_version()
+        metadata["version"] = _upstream_to_pypi(upstream_version)
+
+        license_warning = self._verify_upstream_license(upstream_version)
+        if license_warning is not None:
+            metadata["license-expression"] = license_warning
+            metadata["license-files"] = []
+        else:
+            metadata["license-expression"] = CLAIMED_UPSTREAM_SPDX_ID
+            metadata["license-files"] = ["LICENSE"]
 
 
-def _verify_upstream_license(version_tag: str) -> None:
-    """Fetch the upstream license via the GitHub API and confirm it matches our claim.
+class LlmfitBinaryBuildHook(BuildHookInterface):
+    """Hatchling build hook that injects the llmfit binary into each wheel.
 
-    Fails the build if the license cannot be retrieved or does not match
-    ``CLAIMED_UPSTREAM_SPDX_ID``.
+    Fails a release build if the upstream license cannot be verified. For an editable build, a
+    warning is printed instead.
     """
-    url = GITHUB_LICENSE_API_URL.format(ref=version_tag)
-    print(f"  GET {url}")
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            data = json.loads(resp.read())
-    except Exception as exc:
-        raise RuntimeError(
-            f"Could not retrieve upstream license from {url}: {exc}\n"
-            "Refusing to build while license cannot be verified.",
-        ) from exc
 
-    spdx_id = (data.get("license") or {}).get("spdx_id", "NOASSERTION")
-    if spdx_id == "NOASSERTION":
-        raise RuntimeError(
-            f"GitHub could not identify the upstream license at tag {version_tag!r}. "
-            f"Cannot verify our claim of {CLAIMED_UPSTREAM_SPDX_ID!r}. "
-            "Refusing to build.",
-        )
-    if spdx_id != CLAIMED_UPSTREAM_SPDX_ID:
-        raise RuntimeError(
-            f"Upstream license mismatch at tag {version_tag!r}: "
-            f"we claim {CLAIMED_UPSTREAM_SPDX_ID!r} but GitHub reports {spdx_id!r}. "
-            "Update LICENSE and CLAIMED_UPSTREAM_SPDX_ID before building.",
-        )
-    print(f"  License OK (upstream SPDX: {spdx_id})")
+    PLUGIN_NAME = "llmfit binary from GitHub releases"
 
+    @staticmethod
+    def _detect_platform() -> str:
+        """Return the best platform tag for the current machine."""
+        first = next(t.platform for t in sys_tags())
+        best = next((t.platform for t in sys_tags() if t.platform in TARGET_CONFIGS), None)
+        if best is not None:
+            return best
+        raise RuntimeError(f"No suitable wheel platform found for runtime platform {first!r}.")
 
-class CustomBuildHook(BuildHookInterface):
-    """Hatchling build hook that injects the llmfit binary into each wheel."""
+    @staticmethod
+    def _download(url: str) -> bytes:
+        print(f"  GET {url}")
+        with urllib.request.urlopen(url) as resp:
+            return resp.read()
 
-    PLUGIN_NAME = "custom"
+    @staticmethod
+    def _extract(archive_bytes: bytes, binary_name: str, *, is_zip: bool) -> bytes:
+        if is_zip:
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+                for name in zf.namelist():
+                    if Path(name).name == binary_name:
+                        return zf.read(name)
+            raise FileNotFoundError(f"{binary_name!r} not found in zip archive")
+        with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as tf:
+            for member in tf.getmembers():
+                if Path(member.name).name == binary_name:
+                    f = tf.extractfile(member)
+                    if f is not None:
+                        return f.read()
+        raise FileNotFoundError(f"{binary_name!r} not found in tar.gz archive")
+
+    def _fetch_binary(self, upstream_version: UpstreamVersion, py_target: str) -> Path:
+        """Download, verify, and extract the binary for the given version and target."""
+        upstream_target, binary_name, is_zip = TARGET_CONFIGS[py_target]
+        ext = ".zip" if is_zip else ".tar.gz"
+        archive_filename = f"llmfit-{upstream_version}-{upstream_target}{ext}"
+        sha256_filename = f"{archive_filename}.sha256"
+
+        archive_url = GITHUB_DOWNLOAD_URL.format(version_tag=upstream_version, filename=archive_filename)
+        sha256_url = GITHUB_DOWNLOAD_URL.format(version_tag=upstream_version, filename=sha256_filename)
+
+        # Write archive and binary to a subdirectory of artifacts/ (gitignored).
+        archive_dir = Path(self.root) / "artifacts" / "archives"
+        bin_dir = Path(self.root) / "artifacts" / "binaries" / upstream_version
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        archive_path = archive_dir / archive_filename
+        bin_path = bin_dir / f"llmfit-{upstream_target}{'.exe' if binary_name.endswith('.exe') else ''}"
+
+        if archive_path.is_file():
+            print(f"  archive: cached ({archive_filename})")
+            archive_bytes = archive_path.read_bytes()
+        else:
+            archive_bytes = self._download(archive_url)
+
+        sha256_content = self._download(sha256_url).decode()
+        expected_hash = sha256_content.split()[0]
+        actual_hash = hashlib.sha256(archive_bytes).hexdigest()
+        if actual_hash != expected_hash:
+            raise ValueError(
+                f"SHA256 mismatch for {archive_filename}:\n  expected: {expected_hash}\n  actual:   {actual_hash}",
+            )
+        print(f"  SHA256 OK ({actual_hash[:16]}...)")
+
+        binary_data = self._extract(archive_bytes, binary_name, is_zip=is_zip)
+        print(f"  Extracted {binary_name} ({len(binary_data):,} bytes)")
+
+        if not archive_path.is_file():
+            archive_path.write_bytes(archive_bytes)
+        bin_path.write_bytes(binary_data)
+        bin_path.chmod(0o755)
+        return bin_path
 
     def initialize(self, version: str, build_data: dict) -> None:
         """Download the platform binary and configure the wheel before it is built."""
-        target = os.environ.get("LLMFIT_TARGET") or _detect_target()
-        if target not in TARGET_CONFIGS:
+        py_target = os.environ.get("LLMFIT_PYTHON_PLATFORM_TAG") or self._detect_platform()
+        if py_target not in TARGET_CONFIGS:
             raise ValueError(
-                f"Unknown LLMFIT_TARGET={target!r}. Must be one of: {sorted(TARGET_CONFIGS)}",
+                f"Unknown LLMFIT_PYTHON_PLATFORM_TAG={py_target!r}. Must be one of: {sorted(TARGET_CONFIGS)}",
             )
 
-        wheel_tag, binary_name, _ = TARGET_CONFIGS[target]
+        upstream_target, binary_name, _ = TARGET_CONFIGS[py_target]
+        upstream_version: UpstreamVersion = _pypi_to_upstream(PyPIVersion(self.metadata.version))
 
-        if version == "editable":
-            self._install_editable_binary(target, binary_name)
-            return
+        print(f"  target={upstream_target}  version={upstream_version}  wheel tag=py3-none-{py_target}")
 
-        pkg_version = self.metadata.version  # e.g. "0.8.6" (no v prefix)
-        print(f"[llmfit build hook] target={target}  wheel tag=py3-none-{wheel_tag}")
-        _verify_upstream_license(f"v{pkg_version}")
+        license_expression = self.metadata.core_raw_metadata.get("license-expression", "")
+        if license_expression != CLAIMED_UPSTREAM_SPDX_ID:
+            if version == "editable":
+                print(f"  {license_expression}")
+            else:  # version == "release"
+                raise RuntimeError(f"{license_expression} Refusing to build.")
 
-        binary_data = _fetch_binary(pkg_version, target)
+        bin_path = self._fetch_binary(upstream_version, py_target)
 
-        # Write binary and version-stamped __init__.py to a temp dir.
-        tmp_dir = Path(tempfile.mkdtemp())
-        tmp_bin = tmp_dir / binary_name
-        tmp_bin.write_bytes(binary_data)
-        tmp_bin.chmod(0o755)
-
-        init_src = Path(self.root) / "src" / "llmfit" / "__init__.py"
-        init_text = init_src.read_text().replace(
-            '__version__ = "0.0.0"',
-            f'__version__ = "{pkg_version}"',
-            1,
-        )
-        tmp_init = tmp_dir / "__init__.py"
-        tmp_init.write_text(init_text)
-
-        build_data["force_include"][str(tmp_bin)] = f"llmfit/_bin/{binary_name}"
-        build_data["force_include"][str(tmp_init)] = "llmfit/__init__.py"
+        # Place the binary in the wheel's scripts directory so that the
+        # installer puts it in .venv/bin/ (or Scripts/ on Windows).
+        build_data["shared_scripts"][str(bin_path)] = binary_name
 
         # Override the platform tag so cross-platform wheels get the right name.
-        build_data["tag"] = f"py3-none-{wheel_tag}"
+        build_data["tag"] = f"py3-none-{py_target}"
         build_data["pure_python"] = False
-
-    def _install_editable_binary(self, target: str, binary_name: str) -> None:
-        """Write the binary directly into src/llmfit/_bin/ for editable installs.
-
-        The binary is cached — if it already exists it is not re-downloaded.
-        """
-        bin_dir = Path(self.root) / "src" / "llmfit" / "_bin"
-        dest = bin_dir / binary_name
-        if dest.is_file():
-            print(f"[llmfit build hook] editable: binary already present at {dest}")
-            return
-
-        version = self._resolve_editable_version()
-        print(f"[llmfit build hook] editable: target={target}  version={version}")
-
-        binary_data = _fetch_binary(version, target)
-        bin_dir.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(binary_data)
-        dest.chmod(0o755)
-        print(f"  Installed binary to {dest}")
-
-    def _resolve_editable_version(self) -> str:
-        """Determine which upstream version to download for an editable install."""
-        if v := os.environ.get("LLMFIT_VERSION"):
-            return v.lstrip("v")
-
-        toml_path = Path(self.root) / "pyproject.toml"
-        text = toml_path.read_text()
-        m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
-        if m and m.group(1) != "0.0.0":
-            return m.group(1)
-
-        print("[llmfit build hook] version is placeholder; fetching latest release tag")
-        with urllib.request.urlopen(GITHUB_API_LATEST) as resp:
-            return json.loads(resp.read())["tag_name"].lstrip("v")
