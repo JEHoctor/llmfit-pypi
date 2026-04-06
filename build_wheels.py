@@ -73,18 +73,16 @@ def main() -> None:
 
     version_tag: str = args.version or get_latest_tag()
     version = version_tag.lstrip("v")
-    print(f"Building llmfit {version} (upstream tag: {version_tag})\n")
+    print(f"Building llmfit {version} (upstream tag: {version_tag})\n", flush=True)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     targets = args.targets.split(",") if args.targets else TARGETS
 
-    print()
-
     errors: list[str] = []
     for target in targets:
-        print(f"[{target}]")
+        print(f"[{target}]", flush=True)
         env = {**os.environ, "LLMFIT_PYTHON_PLATFORM_TAG": target, "LLMFIT_UPSTREAM_VERSION": version_tag}
         result = subprocess.run(
             ["uv", "build", "--wheel", "--out-dir", str(output_dir)],  # noqa: S607 # We do want to use the uv found on the PATH.
@@ -95,11 +93,11 @@ def main() -> None:
             errors.append(target)
             print("  FAILED\n", file=sys.stderr)
         else:
-            print()
+            print(flush=True)
 
-    print(f"Built {len(targets) - len(errors)}/{len(targets)} wheel(s) in {output_dir}/")
+    print(f"Built {len(targets) - len(errors)}/{len(targets)} wheel(s) in {output_dir}/", flush=True)
     if errors:
-        print(f"\n{len(errors)} error(s): {', '.join(errors)}")
+        print(f"\n{len(errors)} error(s): {', '.join(errors)}", flush=True)
         sys.exit(1)
 
 

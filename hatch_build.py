@@ -97,7 +97,7 @@ class LlmfitMetadataHook(MetadataHookInterface):
         v = os.environ.get("LLMFIT_UPSTREAM_VERSION")
         if v:
             return _validate_upstream_version(v)
-        print("[llmfit] LLMFIT_UPSTREAM_VERSION not set; fetching latest release tag from GitHub")
+        print("  LLMFIT_UPSTREAM_VERSION not set; fetching latest release tag from GitHub")
         with urllib.request.urlopen(GITHUB_API_LATEST) as resp:
             tag = json.loads(resp.read())["tag_name"]
         return _validate_upstream_version(tag)
@@ -212,7 +212,11 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
         archive_path = archive_dir / archive_filename
         bin_path = bin_dir / f"llmfit-{upstream_target}{'.exe' if binary_name.endswith('.exe') else ''}"
 
-        archive_bytes = archive_path.read_bytes() if archive_path.is_file() else self._download(archive_url)
+        if archive_path.is_file():
+            print(f"  archive: cached ({archive_filename})")
+            archive_bytes = archive_path.read_bytes()
+        else:
+            archive_bytes = self._download(archive_url)
 
         sha256_content = self._download(sha256_url).decode()
         expected_hash = sha256_content.split()[0]
@@ -243,14 +247,12 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
         upstream_target, binary_name, _ = TARGET_CONFIGS[py_target]
         upstream_version: UpstreamVersion = _pypi_to_upstream(PyPIVersion(self.metadata.version))
 
-        print(
-            f"[llmfit build hook] target={upstream_target}  version={upstream_version}  wheel tag=py3-none-{py_target}"
-        )
+        print(f"  target={upstream_target}  version={upstream_version}  wheel tag=py3-none-{py_target}")
 
         license_expression = self.metadata.core_raw_metadata.get("license-expression", "")
         if license_expression != CLAIMED_UPSTREAM_SPDX_ID:
             if version == "editable":
-                print(license_expression)
+                print(f"  {license_expression}")
             else:  # version == "release"
                 raise RuntimeError(f"{license_expression} Refusing to build.")
 
