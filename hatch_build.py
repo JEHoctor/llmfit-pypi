@@ -247,11 +247,12 @@ class LlmfitBinaryBuildHook(BuildHookInterface):
             f"[llmfit build hook] target={upstream_target}  version={upstream_version}  wheel tag=py3-none-{py_target}"
         )
 
-        if self.metadata.core.license_expression != CLAIMED_UPSTREAM_SPDX_ID:
+        license_expression = self.metadata.core_raw_metadata.get("license-expression", "")
+        if license_expression != CLAIMED_UPSTREAM_SPDX_ID:
             if version == "editable":
-                print(self.metadata.core.license_expression)
+                print(license_expression)
             else:  # version == "release"
-                raise RuntimeError(f"{self.metadata.core.license_expression} Refusing to build.")
+                raise RuntimeError(f"{license_expression} Refusing to build.")
 
         bin_path = self._fetch_binary(upstream_version, py_target)
 
