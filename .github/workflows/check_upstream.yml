@@ -11,36 +11,53 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: Compare upstream tag with published PyPI version
+      - name: Find upstream versions not yet published to PyPI
         id: check
         run: |
-          LATEST_TAG=$(curl -sf https://api.github.com/repos/AlexsJones/llmfit/releases/latest \
-            | jq -r .tag_name)
-          # Strip leading 'v' to get a bare version string for comparison
-          LATEST="${LATEST_TAG#v}"
+          # Fetch all upstream release tags across all pages.
+          # gh api --paginate emits one JSON array per page; jq -s flattens them.
+          UPSTREAM_TAGS=$(gh api --paginate /repos/AlexsJones/llmfit/releases \
+            | jq -s '[.[].[] | .tag_name]')
 
-          PUBLISHED=$(curl -sf https://pypi.org/pypi/llmfit/json \
-            | jq -r '.info.version // "none"' \
-            || echo "none")
+          # Fetch all published PyPI versions (empty array if package doesn't exist yet)
+          PYPI_VERSIONS=$(curl -sf https://pypi.org/pypi/llmfit/json \
+            | jq '[.releases | keys[]]' \
+            || echo '[]')
 
-          echo "upstream tag:      $LATEST_TAG"
-          echo "upstream version:  $LATEST"
-          echo "published version: $PUBLISHED"
+          echo "Upstream tags:  $UPSTREAM_TAGS"
+          echo "PyPI versions:  $PYPI_VERSIONS"
 
-          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
-          echo "latest=$LATEST"         >> "$GITHUB_OUTPUT"
-          echo "published=$PUBLISHED"   >> "$GITHUB_OUTPUT"
+          # Compute tags present upstream but not on PyPI, sorted oldest-first.
+          # Only consider tags that match vX.Y.Z to skip malformed upstream tags.
+          #
+          # [0, 9, 2] is the oldest version we want to publish. It was the latest
+          # version on PyPI when this backfill logic was introduced. To publish
+          # older versions, lower this floor.
+          TAGS=$(jq -n \
+            --argjson u "$UPSTREAM_TAGS" \
+            --argjson p "$PYPI_VERSIONS" \
+            '($u | map(select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) | map(ltrimstr("v"))) as $stripped
+             | ($stripped - $p)
+             | map(select((split(".") | map(tonumber)) >= [0, 9, 2]))
+             | sort_by(split(".") | map(tonumber))
+             | map("v" + .)')
 
-      - name: Trigger build-and-publish if versions differ
-        if: steps.check.outputs.latest != steps.check.outputs.published
+          echo "Tags to publish: $TAGS"
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger build-and-publish for each missing version
+        if: steps.check.outputs.tags != '[]'
         uses: actions/github-script@v8
         with:
           script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo:  context.repo.repo,
-              workflow_id: 'build_and_publish.yml',
-              ref:   'main',
-              inputs: { version: '${{ steps.check.outputs.latest_tag }}' },
-            });
-            console.log('Triggered build_and_publish.yml for ${{ steps.check.outputs.latest_tag }}');
+            const tags = ${{ steps.check.outputs.tags }};
+            for (const tag of tags) {
+              console.log(`Triggering build_and_publish.yml for ${tag}`);
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                workflow_id: 'build_and_publish.yml',
+                ref:   'main',
+                inputs: { version: tag },
+              });
+            }

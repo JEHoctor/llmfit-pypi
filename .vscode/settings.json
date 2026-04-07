@@ -1,9 +1,12 @@
 {
     "cSpell.words": [
+        "Alexs",
+        "argjson",
         "docstrings",
         "execv",
         "ipython",
         "llmfit",
+        "ltrimstr",
         "manylinux",
         "msvc",
         "musllinux",
@@ -11,6 +14,7 @@
         "pydocstyle",
         "pypa",
         "testpaths",
+        "tonumber",
         "urllib",
         "urlopen"
     ]
