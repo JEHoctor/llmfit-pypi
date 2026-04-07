@@ -13,11 +13,17 @@ jobs:
     steps:
       - name: Find upstream versions not yet published to PyPI
         id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # Fetch all upstream release tags across all pages.
           # gh api --paginate emits one JSON array per page; jq -s flattens them.
           UPSTREAM_TAGS=$(gh api --paginate /repos/AlexsJones/llmfit/releases \
             | jq -s '[.[].[] | .tag_name]')
+          if [ "$(echo "$UPSTREAM_TAGS" | jq 'length')" -eq 0 ]; then
+            echo "ERROR: no upstream releases found; gh api call may have failed"
+            exit 1
+          fi
 
           # Fetch all published PyPI versions (empty array if package doesn't exist yet)
           PYPI_VERSIONS=$(curl -sf https://pypi.org/pypi/llmfit/json \
