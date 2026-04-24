@@ -1,5 +1,7 @@
 # llmfit via PyPI
 
+⚠️ This repository is now archived because [this PR](https://github.com/AlexsJones/llmfit/pull/444) moved Python packaging into the main repo. ⚠️
+
 Unofficial PyPI distribution of [llmfit](https://github.com/AlexsJones/llmfit) — the LLM model management CLI.
 
 This package downloads pre-built binaries from the upstream GitHub releases and
